@@ -1,10 +1,9 @@
 FROM golang:1.26.3-alpine AS builder
 
 WORKDIR /build
-COPY go.mod go.sum ./
-RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 go build -o /build/llm-bridge ./cmd/llm-bridge
+RUN go mod download
+RUN CGO_ENABLED=0 go build -o /build/llm-bridge ./cmd/llm-bridge/main.go
 
 FROM alpine:3.21
 
