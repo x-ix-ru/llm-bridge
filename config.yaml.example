@@ -1,0 +1,9 @@
+global:
+    fallback_strategy: best_effort
+    discovery_interval_sec: 15
+    request_timeout_sec: 60
+    queue_timeout_sec: 30
+    drain_timeout_sec: 30
+    shutdown_timeout_sec: 10
+servers: []
+

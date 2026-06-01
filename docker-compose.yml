@@ -1,0 +1,11 @@
+services:
+  llm-bridge:
+    build: .
+    container_name: llm-bridge
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/config.yaml
+    environment:
+      - CONFIG_PATH=/config.yaml
+    restart: unless-stopped

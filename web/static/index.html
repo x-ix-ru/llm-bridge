@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>llm-bridge Admin</title>
+<link rel="stylesheet" href="/admin/static/style.css">
+</head>
+<body>
+<nav>
+  <a href="/admin/" data-section="dashboard" class="active">Dashboard</a>
+  <a href="/admin/servers" data-section="servers">Servers</a>
+  <a href="/admin/config" data-section="config">Config</a>
+  <a href="/admin/opencode" data-section="opencode">OpenCode Config</a>
+  <a href="/admin/status" data-section="status">Status</a>
+  <a href="/admin/chat" data-section="chat">Chat</a>
+</nav>
+<main>
+  <section id="page-dashboard" class="page active">
+    <h1>Dashboard</h1>
+    <div id="dashboard-summary" class="summary-cards"></div>
+    <div id="dashboard-servers" class="server-cards"></div>
+  </section>
+  <section id="page-servers" class="page">
+    <h1>Servers <button id="btn-add-server" class="btn btn-primary">+ Add Server</button></h1>
+    <table>
+      <thead>
+        <tr>
+          <th>URL</th>
+          <th>Distance</th>
+          <th>Max Concurrent</th>
+          <th>Inflight</th>
+          <th>Status</th>
+          <th>Models</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="servers-tbody"></tbody>
+    </table>
+  </section>
+  <section id="page-config" class="page">
+    <h1>Config <button id="btn-edit-config" class="btn btn-primary">Edit</button></h1>
+    <pre id="config-pre"></pre>
+    <div id="config-editor" class="hidden">
+      <textarea id="config-textarea" spellcheck="false"></textarea>
+      <div class="btn-group">
+        <button id="btn-save-config" class="btn btn-primary">Save</button>
+        <button id="btn-cancel-config" class="btn btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </section>
+  <section id="page-opencode" class="page">
+    <h1>OpenCode Config <button id="btn-copy-opencode" class="btn btn-primary">Copy to Clipboard</button></h1>
+    <p class="section-desc">Auto-generated <code>opencode.jsonc</code> with all discovered models.
+    External providers are disabled by default. Set <code>baseUrl</code> to your llm-bridge address.</p>
+    <pre id="opencode-pre"></pre>
+  </section>
+  <section id="page-status" class="page">
+    <h1>Status</h1>
+    <pre id="status-pre"></pre>
+  </section>
+  <section id="page-chat" class="page">
+    <h1>Chat</h1>
+    <div class="chat-container">
+      <div class="chat-controls">
+        <select id="chat-model-select">
+          <option value="">Select a model...</option>
+        </select>
+        <button id="btn-chat-send" class="btn btn-primary" disabled>Send</button>
+      </div>
+
+      <div class="chat-input-area">
+        <textarea id="chat-message-input" placeholder="Enter your message..." rows="3"></textarea>
+      </div>
+
+      <div id="chat-messages" class="chat-messages"></div>
+
+      <div id="chat-metrics" class="chat-metrics hidden">
+        <div class="metrics-grid">
+          <div class="metric-item"><span class="metric-label">Model:</span><span id="metric-model">—</span></div>
+          <div class="metric-item"><span class="metric-label">Backend:</span><span id="metric-backend">—</span></div>
+          <div class="metric-item"><span class="metric-label">TTFT:</span><span id="metric-ttft">—</span></div>
+          <div class="metric-item"><span class="metric-label">Total:</span><span id="metric-total">—</span></div>
+          <div class="metric-item"><span class="metric-label">Tokens:</span><span id="metric-tokens">—</span></div>
+          <div class="metric-item"><span class="metric-label">Status:</span><span id="metric-status">—</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<div id="modal-overlay" class="hidden">
+  <div id="modal-content">
+    <h2 id="modal-title"></h2>
+    <form id="modal-form">
+      <div class="form-group">
+        <label for="modal-url">URL</label>
+        <input type="text" id="modal-url" required placeholder="http://example:8080">
+      </div>
+      <div class="form-group">
+        <label for="modal-distance">Distance (1-10)</label>
+        <input type="number" id="modal-distance" min="1" max="10" required>
+      </div>
+      <div class="form-group">
+        <label for="modal-max-concurrent">Max Concurrent Requests</label>
+        <input type="number" id="modal-max-concurrent" min="1" required>
+      </div>
+      <div class="btn-group">
+        <button type="submit" id="modal-submit" class="btn btn-primary">Save</button>
+        <button type="button" id="modal-cancel" class="btn btn-secondary">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>
+<div id="toast-container"></div>
+<script src="/admin/static/app.js"></script>
+</body>
+</html>

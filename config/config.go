@@ -1,0 +1,174 @@
+// Package config handles YAML configuration persistence and validation
+// for the llm-bridge proxy.
+package config
+
+import (
+	"fmt"
+	"net/url"
+	"os"
+	"sync"
+
+	"gopkg.in/yaml.v3"
+)
+
+type FallbackStrategy string
+
+const (
+	FallbackError      FallbackStrategy = "error"
+	FallbackBestEffort FallbackStrategy = "best_effort"
+	FallbackQueue      FallbackStrategy = "queue"
+)
+
+func (s FallbackStrategy) Valid() bool {
+	switch s {
+	case FallbackError, FallbackBestEffort, FallbackQueue:
+		return true
+	}
+	return false
+}
+
+type ServerConfig struct {
+	URL                   string `yaml:"url"`
+	Distance              int    `yaml:"distance"`
+	MaxConcurrentRequests int    `yaml:"max_concurrent_requests"`
+}
+
+type GlobalConfig struct {
+	FallbackStrategy     FallbackStrategy `yaml:"fallback_strategy"`
+	DiscoveryIntervalSec int              `yaml:"discovery_interval_sec"`
+	RequestTimeoutSec    int              `yaml:"request_timeout_sec"`
+	QueueTimeoutSec      int              `yaml:"queue_timeout_sec"`
+	DrainTimeoutSec      int              `yaml:"drain_timeout_sec"`
+	ShutdownTimeoutSec   int              `yaml:"shutdown_timeout_sec"`
+	OpenCodeBaseURL      string           `yaml:"opencode_base_url,omitempty"`
+}
+
+type Config struct {
+	Global  GlobalConfig   `yaml:"global"`
+	Servers []ServerConfig `yaml:"servers"`
+}
+
+func DefaultConfig() Config {
+	return Config{
+		Global: GlobalConfig{
+			FallbackStrategy:     FallbackError,
+			DiscoveryIntervalSec: 15,
+			RequestTimeoutSec:    60,
+			QueueTimeoutSec:      30,
+			DrainTimeoutSec:      30,
+			ShutdownTimeoutSec:   10,
+		},
+		Servers: []ServerConfig{},
+	}
+}
+
+type Store struct {
+	mu       sync.RWMutex
+	config   Config
+	filePath string
+}
+
+func NewStore(filePath string) *Store {
+	return &Store{
+		config:   DefaultConfig(),
+		filePath: filePath,
+	}
+}
+
+func (s *Store) Load() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	data, err := os.ReadFile(s.filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			s.config = DefaultConfig()
+			return s.saveLocked()
+		}
+		return fmt.Errorf("read config: %w", err)
+	}
+
+	var cfg Config
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+
+	if !cfg.Global.FallbackStrategy.Valid() {
+		cfg.Global.FallbackStrategy = FallbackError
+	}
+	if cfg.Global.DiscoveryIntervalSec <= 0 {
+		cfg.Global.DiscoveryIntervalSec = 15
+	}
+	if cfg.Global.RequestTimeoutSec <= 0 {
+		cfg.Global.RequestTimeoutSec = 60
+	}
+	if cfg.Global.QueueTimeoutSec <= 0 {
+		cfg.Global.QueueTimeoutSec = 30
+	}
+	if cfg.Global.DrainTimeoutSec <= 0 {
+		cfg.Global.DrainTimeoutSec = 30
+	}
+	if cfg.Global.ShutdownTimeoutSec <= 0 {
+		cfg.Global.ShutdownTimeoutSec = 10
+	}
+
+	s.config = cfg
+	return nil
+}
+
+func (s *Store) Get() Config {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.config
+}
+
+func (s *Store) Set(cfg Config) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !cfg.Global.FallbackStrategy.Valid() {
+		return fmt.Errorf("invalid fallback strategy: %s", cfg.Global.FallbackStrategy)
+	}
+	for i, sv := range cfg.Servers {
+		if sv.URL == "" {
+			return fmt.Errorf("server %d: url is required", i)
+		}
+		if _, err := url.Parse(sv.URL); err != nil {
+			return fmt.Errorf("server %d: invalid url: %w", i, err)
+		}
+		if sv.Distance < 1 || sv.Distance > 10 {
+			return fmt.Errorf("server %d: distance must be 1-10", i)
+		}
+		if sv.MaxConcurrentRequests <= 0 {
+			return fmt.Errorf("server %d: max_concurrent_requests must be > 0", i)
+		}
+	}
+
+	s.config = cfg
+	return s.saveLocked()
+}
+
+func (s *Store) Save() error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.saveLocked()
+}
+
+func (s *Store) saveLocked() error {
+	data, err := yaml.Marshal(&s.config)
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	if err := os.WriteFile(s.filePath, data, 0644); err != nil {
+		return fmt.Errorf("write config: %w", err)
+	}
+	return nil
+}
+
+// GetCopy returns a copy of the current configuration.
+func (s *Store) GetCopy() Config {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cp := s.config
+	return cp
+}
