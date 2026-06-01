@@ -47,11 +47,13 @@ func New(interval time.Duration) *Discovery {
 }
 
 // SetServers updates the list of servers to poll.
+// Newly added servers will be logged as "unknown → healthy/unhealthy"
+// on the next Discover() call.
 func (d *Discovery) SetServers(urls []string) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.servers = make([]string, len(urls))
 	copy(d.servers, urls)
+	d.mu.Unlock()
 }
 
 // Start begins the periodic polling in a background goroutine.
@@ -152,14 +154,14 @@ func (d *Discovery) Discover(ctx context.Context) error {
 
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url+"/v1/models", nil)
 		if err != nil {
-			d.setHealthy(url, false)
+			d.setHealthy(url, false, err)
 			d.logger.Debug("discovery: request creation failed", "server", url, "error", err)
 			continue
 		}
 
 		resp, err := d.client.Do(req)
 		if err != nil {
-			d.setHealthy(url, false)
+			d.setHealthy(url, false, err)
 			d.logger.Debug("discovery: request failed", "server", url, "error", err)
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -170,7 +172,7 @@ func (d *Discovery) Discover(ctx context.Context) error {
 		var body modelsResponse
 		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 			resp.Body.Close()
-			d.setHealthy(url, false)
+			d.setHealthy(url, false, err)
 			d.logger.Debug("discovery: decode failed", "server", url, "error", err)
 			continue
 		}
@@ -194,7 +196,7 @@ func (d *Discovery) Discover(ctx context.Context) error {
 		}
 
 		d.updateModels(url, modelIDs)
-		d.setHealthy(url, true)
+		d.setHealthy(url, true, nil)
 	}
 
 	return nil
@@ -226,10 +228,45 @@ func (d *Discovery) ServersForModel(model string) []string {
 	return result
 }
 
-func (d *Discovery) setHealthy(url string, healthy bool) {
+// setHealthy updates the health status for a server and logs the
+// transition if it changed.
+func (d *Discovery) setHealthy(url string, healthy bool, err error) {
 	d.mu.Lock()
-	defer d.mu.Unlock()
+	prev, existed := d.healthy[url]
 	d.healthy[url] = healthy
+	d.mu.Unlock()
+
+	var fromStatus string
+	switch {
+	case !existed:
+		fromStatus = "unknown"
+	case prev:
+		fromStatus = "healthy"
+	default:
+		fromStatus = "unhealthy"
+	}
+
+	var toStatus string
+	if healthy {
+		toStatus = "healthy"
+	} else {
+		toStatus = "unhealthy"
+	}
+
+	if fromStatus == toStatus {
+		return
+	}
+
+	attrs := []any{
+		"component", "discovery",
+		"server_url", url,
+		"from_status", fromStatus,
+		"to_status", toStatus,
+	}
+	if err != nil && !healthy {
+		attrs = append(attrs, "error", err.Error())
+	}
+	d.logger.Info("server status changed", attrs...)
 }
 
 func (d *Discovery) updateModels(url string, modelIDs []string) {

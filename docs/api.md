@@ -25,6 +25,7 @@ This documentation describes all endpoints of the LLM Bridge proxy server.
   - [GET /admin/metrics](#get-adminmetrics)
   - [GET /admin/opencode-config](#get-adminopencode-config)
 - [Admin UI / Административный интерфейс](#admin-ui)
+- [Logging / Логирование](#logging)
 - [Routing Algorithm / Алгоритм маршрутизации](#routing-algorithm)
 - [Error Handling / Обработка ошибок](#error-handling)
 
@@ -514,3 +515,123 @@ All error responses follow the OpenAI error format.
 | `422` | Model not found on any server | Модель не найдена ни на одном сервере |
 | `502` | Proxy error to backend | Ошибка проксирования на бэкенд |
 | `503` | No servers available, all servers at capacity, queue timeout, or request canceled | Нет доступных серверов, все серверы загружены, таймаут очереди или запрос отменён |
+
+---
+
+## Logging / Логирование
+
+**RU** — Все запросы логируются в `stdout` в JSON-формате (slog). Каждый запрос получает уникальный `request_id`. Логируются метрики производительности, выбранный сервер и модель.
+
+**EN** — All requests are logged to `stdout` in JSON format (slog). Each request gets a unique `request_id`. Performance metrics, selected server, and model are logged.
+
+### Request Log Format / Формат логов запросов
+
+Каждый запрос логируется одним JSON-объектом (уровень `INFO`):
+
+Каждый запрос логируется одним JSON-объектом (уровень `INFO`):
+
+```json
+{
+  "time": "2026-06-02T10:30:45.123Z",
+  "level": "INFO",
+  "msg": "request",
+  "request_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "status": 200,
+  "duration_ms": 142.35,
+  "request_bytes": 512,
+  "response_bytes": 2048,
+  "server": "http://vllm-1:8000",
+  "model": "meta-llama/Llama-3-8B"
+}
+```
+
+**Поля / Fields:**
+
+| Поле / Field | Тип / Type | Описание / Description |
+|--------------|------------|------------------------|
+| `request_id` | string | Уникальный UUID v4 для каждого запроса / Unique UUID v4 per request |
+| `method` | string | HTTP-метод / HTTP method |
+| `path` | string | URL-путь запроса / Request URL path |
+| `status` | integer | HTTP статус-код ответа / HTTP response status code |
+| `duration_ms` | float | Длительность обработки в миллисекундах (точность до сотых) / Processing duration in milliseconds (hundredths precision) |
+| `request_bytes` | integer | Размер тела запроса в байтах / Request body size in bytes |
+| `response_bytes` | integer | Размер тела ответа в байтах / Response body size in bytes |
+| `server` | string | URL выбранного бэкенда (или `"-"` если не выбран/ошибка) / Selected backend URL (or `"-"` if not selected/error) |
+| `model` | string | Модель из запроса (или `"-"` если не распознана) / Model from request (or `"-"` if not recognized) |
+| `error` | string | Описание ошибки (присутствует только при ошибке) / Error description (present only on error) |
+
+### Server Status Log / Лог статусов серверов
+
+**RU** — При изменении статуса здоровья сервера (healthy/unhealthy) логируется событие. Лог появляется только при изменении статуса, не при каждом poll.
+
+**EN** — When a server's health status changes (healthy/unhealthy), an event is logged. The log appears only on status change, not on every poll.
+
+```json
+{
+  "time": "2026-06-02T10:30:45.123Z",
+  "level": "INFO",
+  "msg": "server status changed",
+  "component": "discovery",
+  "server_url": "http://vllm-1:8000",
+  "from_status": "healthy",
+  "to_status": "unhealthy",
+  "error": "Get \"http://vllm-1:8000/v1/models\": dial tcp 10.0.0.1:8000: connect: connection refused"
+}
+```
+
+**Поля / Fields:**
+
+| Поле / Field | Тип / Type | Описание / Description |
+|--------------|------------|------------------------|
+| `component` | string | Всегда `"discovery"` / Always `"discovery"` |
+| `server_url` | string | URL сервера / Server URL |
+| `from_status` | string | Предыдущий статус: `unknown`, `healthy` или `unhealthy` / Previous status: `unknown`, `healthy`, or `unhealthy` |
+| `to_status` | string | Новый статус: `healthy` или `unhealthy` / New status: `healthy` or `unhealthy` |
+| `error` | string | Описание ошибки (только если `to_status` = `"unhealthy"`) / Error description (only if `to_status` = `"unhealthy"`) |
+
+### Примеры / Examples
+
+**Запрос к бэкенду / Request to backend:**
+
+```bash
+$ curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama-3","messages":[{"role":"user","content":"Hello"}]}'
+```
+
+```json
+{
+  "time": "2026-06-02T10:30:45.123Z",
+  "level": "INFO",
+  "msg": "request",
+  "request_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "method": "POST",
+  "path": "/v1/chat/completions",
+  "status": 200,
+  "duration_ms": 142.35,
+  "request_bytes": 512,
+  "response_bytes": 2048,
+  "server": "http://vllm-1:8000",
+  "model": "llama-3"
+}
+```
+
+**Изменение статуса сервера / Server status change:**
+
+```json
+{
+  "time": "2026-06-02T10:30:45.123Z",
+  "level": "INFO",
+  "msg": "server status changed",
+  "component": "discovery",
+  "server_url": "http://vllm-1:8000",
+  "from_status": "healthy",
+  "to_status": "unhealthy",
+  "error": "connection refused"
+}
+```
+
+---
+

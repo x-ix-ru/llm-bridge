@@ -69,6 +69,9 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) setupRoutes() {
 	s.mux = chi.NewMux()
 
+	// Global logging middleware — wraps all routes.
+	s.mux.Use(LoggingMiddleware())
+
 	// OpenAI API
 	s.mux.Post("/v1/chat/completions", s.handleChatCompletions)
 	s.mux.Post("/v1/completions", s.handleCompletions)
@@ -206,6 +209,11 @@ func (s *Server) handleOpenAIProxy(w http.ResponseWriter, r *http.Request, check
 		return
 	}
 	defer s.pool.Release(conn)
+
+	// Record backend server URL for logging middleware.
+	if lrw, ok := w.(*loggingResponseWriter); ok {
+		lrw.SetBackendServerURL(conn.ServerID)
+	}
 
 	headers := r.Header.Clone()
 	if checkStream && req.Stream {

@@ -1,10 +1,13 @@
 package discovery
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -307,4 +310,192 @@ func TestIsHealthy(t *testing.T) {
 	d.mu.Unlock()
 
 	assert.True(t, d.IsHealthy("http://known:8000"))
+}
+
+// ---------------------------------------------------------------------------
+// Server status change logging tests
+// ---------------------------------------------------------------------------
+
+// logLines captures slog output as lines of text.
+type logLines struct {
+	lines []string
+}
+
+func (l *logLines) Write(p []byte) (int, error) {
+	for len(p) > 0 {
+		idx := bytes.IndexByte(p, '\n')
+		if idx < 0 {
+			break
+		}
+		line := strings.TrimSpace(string(p[:idx]))
+		if line != "" {
+			l.lines = append(l.lines, line)
+		}
+		p = p[idx+1:]
+	}
+	return len(p), nil
+}
+
+func (l *logLines) contains(t *testing.T, substr string) {
+	t.Helper()
+	for _, line := range l.lines {
+		if strings.Contains(line, substr) {
+			return
+		}
+	}
+	t.Errorf("log does not contain %q in any of %d lines", substr, len(l.lines))
+}
+
+func (l *logLines) countContaining(t *testing.T, substr string) int {
+	t.Helper()
+	count := 0
+	for _, line := range l.lines {
+		if strings.Contains(line, substr) {
+			count++
+		}
+	}
+	return count
+}
+
+// makeSlogLogger creates a slog.Logger writing to the given logLines buffer.
+func makeSlogLogger(lc *logLines) *slog.Logger {
+	return slog.New(slog.NewJSONHandler(lc, &slog.HandlerOptions{Level: slog.LevelInfo}))
+}
+
+func TestStatusLogging_UnknownToHealthy(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := modelsResponse{
+			Object: "list",
+			Data:   []json.RawMessage{json.RawMessage(`{"id":"gpt-4","object":"model"}`)},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	var captured logLines
+	oldLogger := slog.Default()
+	slog.SetDefault(makeSlogLogger(&captured))
+	defer func() { slog.SetDefault(oldLogger) }()
+
+	d := New(1 * time.Minute)
+	d.SetServers([]string{srv.URL})
+
+	err := d.Discover(context.Background())
+	require.NoError(t, err)
+	assert.True(t, d.IsHealthy(srv.URL))
+
+	captured.contains(t, `"from_status":"unknown"`)
+	captured.contains(t, `"to_status":"healthy"`)
+	captured.contains(t, `"server_url":"`+srv.URL+`"`)
+}
+
+func TestStatusLogging_UnknownToUnhealthy(t *testing.T) {
+	var captured logLines
+	oldLogger := slog.Default()
+	slog.SetDefault(makeSlogLogger(&captured))
+	defer func() { slog.SetDefault(oldLogger) }()
+
+	d := New(1 * time.Minute)
+	d.SetServers([]string{"http://127.0.0.1:1"}) // unreachable
+
+	err := d.Discover(context.Background())
+	assert.NoError(t, err)
+	assert.False(t, d.IsHealthy("http://127.0.0.1:1"))
+
+	captured.contains(t, `"from_status":"unknown"`)
+	captured.contains(t, `"to_status":"unhealthy"`)
+}
+
+func TestStatusLogging_HealthyToUnhealthy(t *testing.T) {
+	callCount := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if callCount == 1 {
+			resp := modelsResponse{
+				Object: "list",
+				Data:   []json.RawMessage{json.RawMessage(`{"id":"gpt-4","object":"model"}`)},
+			}
+			json.NewEncoder(w).Encode(resp)
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	oldLogger := slog.Default()
+
+	// First discover: unknown → healthy.
+	var captured1 logLines
+	slog.SetDefault(makeSlogLogger(&captured1))
+	d := New(1 * time.Minute)
+	d.SetServers([]string{srv.URL})
+
+	err := d.Discover(context.Background())
+	require.NoError(t, err)
+	assert.True(t, d.IsHealthy(srv.URL))
+	captured1.contains(t, `"from_status":"unknown"`)
+	captured1.contains(t, `"to_status":"healthy"`)
+
+	// Second discover: healthy → unhealthy.
+	// Switch logger and update d.logger to use the new capture buffer.
+	var captured2 logLines
+	slog.SetDefault(makeSlogLogger(&captured2))
+	d.logger = slog.Default()
+
+	err = d.Discover(context.Background())
+	require.NoError(t, err)
+	assert.False(t, d.IsHealthy(srv.URL))
+
+	captured2.contains(t, `"from_status":"healthy"`)
+	captured2.contains(t, `"to_status":"unhealthy"`)
+	captured2.contains(t, `"error"`)
+
+	slog.SetDefault(oldLogger)
+}
+
+func TestStatusLogging_NoChange_NoLog(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := modelsResponse{
+			Object: "list",
+			Data:   []json.RawMessage{json.RawMessage(`{"id":"gpt-4","object":"model"}`)},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer srv.Close()
+
+	d := New(1 * time.Minute)
+	d.SetServers([]string{srv.URL})
+
+	// First discover to set initial status.
+	var captured1 logLines
+	oldLogger := slog.Default()
+	slog.SetDefault(makeSlogLogger(&captured1))
+	err := d.Discover(context.Background())
+	require.NoError(t, err)
+
+	// Second discover: no change, no new log.
+	var captured2 logLines
+	slog.SetDefault(makeSlogLogger(&captured2))
+	err = d.Discover(context.Background())
+	require.NoError(t, err)
+
+	statusChangeCount := captured2.countContaining(t, "server status changed")
+	assert.Equal(t, 0, statusChangeCount,
+		"should not log when status hasn't changed")
+
+	slog.SetDefault(oldLogger)
+}
+
+func TestStatusLogging_ErrorIncludedForUnhealthy(t *testing.T) {
+	var captured logLines
+	oldLogger := slog.Default()
+	slog.SetDefault(makeSlogLogger(&captured))
+	defer func() { slog.SetDefault(oldLogger) }()
+
+	d := New(1 * time.Minute)
+	d.SetServers([]string{"http://127.0.0.1:1"})
+
+	err := d.Discover(context.Background())
+	assert.NoError(t, err)
+
+	captured.contains(t, `"error":"`)
 }

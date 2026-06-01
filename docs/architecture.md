@@ -257,3 +257,19 @@ Store.Set() ──────────► save to YAML file
     ▼
 syncServers() ─────────► pool + discovery + metrics updated
 ```
+### 7. server/ — HTTP-сервер / HTTP Server (~700 строк / ~700 lines)
+
+- Маршрутизатор chi.Mux / chi.Mux router
+- Endpoints совместимые с OpenAI (4 маршрута) / OpenAI-compatible endpoints (4 routes)
+- Admin REST API (10 маршрутов) / Admin REST API (10 routes)
+- Admin SPA через embedded файлы / Admin SPA served via embedded files
+- **Logging middleware** — логирует каждый запрос в JSON (slog) / **Logging middleware** — logs each request in JSON (slog)
+
+### 4. discovery/ — Обнаружение моделей / Model Discovery (~300 строк / ~300 lines)
+
+- Периодический опрос GET /v1/models на каждом бэкенде / Periodic polling of GET /v1/models on each backend
+- Отслеживание доступности моделей на серверах / Tracks which models are available on which servers
+- Статус здоровья сервера (последний успешный опрос = healthy) / Health status per server (last successful poll = healthy)
+- Сохранение полной метаданных моделей из upstream / Preserves full upstream model metadata
+- **Логирование статусов** — при изменении healthy/unhealthy логируется событие в stdout / **Status logging** — logs status change event to stdout on healthy/unhealthy transition
+
