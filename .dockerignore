@@ -1,6 +1,6 @@
 .git
 .github
-bin
-config.yaml
+/bin
+/config.yaml
 .env
 .env.local

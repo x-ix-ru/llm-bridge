@@ -4,6 +4,9 @@ WORKDIR /build
 COPY . .
 RUN go mod download
 RUN go version
+RUN pwd
+RUN find . -type f | sort
+
 RUN CGO_ENABLED=0 go build -o /build/llm-bridge ./cmd/llm-bridge
 
 FROM alpine:3.21
