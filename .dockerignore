@@ -1,7 +1,5 @@
 .git
 .github
-orig.code
-devdocs
 bin
 config.yaml
 .env

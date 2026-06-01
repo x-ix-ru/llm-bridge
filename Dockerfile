@@ -3,7 +3,8 @@ FROM golang:1.26.3-alpine AS builder
 WORKDIR /build
 COPY . .
 RUN go mod download
-RUN CGO_ENABLED=0 go build -o /build/llm-bridge ./cmd/llm-bridge/main.go
+RUN go version
+RUN CGO_ENABLED=0 go build -o /build/llm-bridge ./cmd/llm-bridge
 
 FROM alpine:3.21
 
