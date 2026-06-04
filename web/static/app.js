@@ -400,7 +400,7 @@
 
   function loadOpenCodeConfig() {
     var baseUrl = window.location.origin;
-    fetch('/admin/opencode-config?base_url=' + encodeURIComponent(baseUrl))
+    fetch('/opencode/config?base_url=' + encodeURIComponent(baseUrl))
       .then(function (res) {
         if (!res.ok) throw new Error('Status ' + res.status);
         return res.text();
