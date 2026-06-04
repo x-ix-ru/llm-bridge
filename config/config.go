@@ -42,6 +42,7 @@ type GlobalConfig struct {
 	DrainTimeoutSec       int              `yaml:"drain_timeout_sec"`
 	ShutdownTimeoutSec    int              `yaml:"shutdown_timeout_sec"`
 	OpenCodeBaseURL       string           `yaml:"opencode_base_url,omitempty"`
+	OpenCodeContextOutput int              `yaml:"opencode_context_output,omitempty"`
 	OpenCodeContextBuffer int              `yaml:"opencode_context_buffer,omitempty"`
 	OpenCodeContextInput  int              `yaml:"opencode_context_input,omitempty"`
 }
@@ -108,9 +109,14 @@ func applyEnvOverrides(cfg *GlobalConfig) {
 		cfg.OpenCodeBaseURL = v
 	}
 
+	cfg.OpenCodeContextOutput = envInt("OPENCODE_CONTEXT_OUTPUT", cfg.OpenCodeContextOutput)
+	if cfg.OpenCodeContextOutput <= 0 {
+		cfg.OpenCodeContextOutput = 8192
+	}
+
 	cfg.OpenCodeContextBuffer = envInt("OPENCODE_CONTEXT_BUFFER", cfg.OpenCodeContextBuffer)
 	if cfg.OpenCodeContextBuffer <= 0 {
-		cfg.OpenCodeContextBuffer = 4000
+		cfg.OpenCodeContextBuffer = 1024
 	}
 
 	cfg.OpenCodeContextInput = envInt("OPENCODE_CONTEXT_INPUT", cfg.OpenCodeContextInput)
@@ -128,7 +134,8 @@ func DefaultConfig() Config {
 			QueueTimeoutSec:       30,
 			DrainTimeoutSec:       30,
 			ShutdownTimeoutSec:    10,
-			OpenCodeContextBuffer: 4000,
+			OpenCodeContextOutput: 8192,
+			OpenCodeContextBuffer: 1024,
 			OpenCodeContextInput:  0,
 		},
 		Servers: []ServerConfig{},
@@ -185,7 +192,10 @@ func (s *Store) Load() error {
 		cfg.Global.ShutdownTimeoutSec = 10
 	}
 	if cfg.Global.OpenCodeContextBuffer <= 0 {
-		cfg.Global.OpenCodeContextBuffer = 4000
+		cfg.Global.OpenCodeContextBuffer = 1024
+	}
+	if cfg.Global.OpenCodeContextOutput <= 0 {
+		cfg.Global.OpenCodeContextOutput = 8192
 	}
 
 	applyEnvOverrides(&cfg.Global)
@@ -222,8 +232,14 @@ func (s *Store) Set(cfg Config) error {
 		}
 	}
 
+	if cfg.Global.OpenCodeContextOutput == 0 {
+		cfg.Global.OpenCodeContextOutput = 8192
+	}
+	if cfg.Global.OpenCodeContextOutput < 0 {
+		return fmt.Errorf("opencode_context_output must be > 0")
+	}
 	if cfg.Global.OpenCodeContextBuffer == 0 {
-		cfg.Global.OpenCodeContextBuffer = 4000
+		cfg.Global.OpenCodeContextBuffer = 1024
 	}
 	if cfg.Global.OpenCodeContextBuffer < 0 {
 		return fmt.Errorf("opencode_context_buffer must be > 0")

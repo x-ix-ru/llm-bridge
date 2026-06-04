@@ -119,8 +119,14 @@ func (s *Server) buildModelEntries() map[string]opencodeModelEntry {
 	entries := make(map[string]opencodeModelEntry, len(modelNames))
 	for _, name := range modelNames {
 		ctx := extractMaxModelLen(details[name])
-		outLimit := 8192
-		buffer := 1024
+		outLimit := s.cfg.Get().Global.OpenCodeContextOutput
+		buffer := s.cfg.Get().Global.OpenCodeContextBuffer
+		if outLimit <= 0 {
+			outLimit = 8192
+		}
+		if buffer <= 0 {
+			buffer = 1024
+		}
 		inLimit := ctx - outLimit - buffer
 		if inLimit < 0 {
 			inLimit = 0
@@ -129,6 +135,9 @@ func (s *Server) buildModelEntries() map[string]opencodeModelEntry {
 		if outLimit < 0 {
 			outLimit = 0
 			inLimit = ctx - buffer
+			if inLimit < 0 {
+				inLimit = 0
+			}
 		}
 
 		entries[name] = opencodeModelEntry{
@@ -280,8 +289,14 @@ func (s *Server) handlePostOpenCodeConfig(w http.ResponseWriter, r *http.Request
 	modelEntries := make(map[string]opencodeModelEntry, len(modelNames))
 	for _, name := range modelNames {
 		ctx := extractMaxModelLen(details[name])
-		outLimit := 8192
-		buffer := 1024
+		outLimit := s.cfg.Get().Global.OpenCodeContextOutput
+		buffer := s.cfg.Get().Global.OpenCodeContextBuffer
+		if outLimit <= 0 {
+			outLimit = 8192
+		}
+		if buffer <= 0 {
+			buffer = 1024
+		}
 		inLimit := ctx - outLimit - buffer
 		if inLimit < 0 {
 			inLimit = 0
@@ -290,6 +305,9 @@ func (s *Server) handlePostOpenCodeConfig(w http.ResponseWriter, r *http.Request
 		if outLimit < 0 {
 			outLimit = 0
 			inLimit = ctx - buffer
+			if inLimit < 0 {
+				inLimit = 0
+			}
 		}
 
 		modelEntries[name] = opencodeModelEntry{

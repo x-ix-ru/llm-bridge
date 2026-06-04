@@ -131,7 +131,7 @@ func TestFallbackStrategyValid(t *testing.T) {
 
 func TestOpenCodeContextDefaults(t *testing.T) {
 	cfg := DefaultConfig()
-	assert.Equal(t, 4000, cfg.Global.OpenCodeContextBuffer)
+	assert.Equal(t, 1024, cfg.Global.OpenCodeContextBuffer)
 	assert.Equal(t, 0, cfg.Global.OpenCodeContextInput)
 }
 
@@ -420,7 +420,7 @@ func TestStoreLoad_ENVOverrideOpenCodeFields(t *testing.T) {
 
 	yamlContent := `
 global:
-  opencode_context_buffer: 4000
+  opencode_context_buffer: 1024
   opencode_context_input: 0
 `
 	err := os.WriteFile(path, []byte(yamlContent), 0644)
@@ -473,7 +473,7 @@ global:
   drain_timeout_sec: 30
   shutdown_timeout_sec: 10
   opencode_base_url: http://yaml-url:8080
-  opencode_context_buffer: 4000
+  opencode_context_buffer: 1024
   opencode_context_input: 0
 `
 	err := os.WriteFile(path, []byte(yamlContent), 0644)

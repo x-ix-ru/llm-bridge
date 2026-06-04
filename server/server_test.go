@@ -751,6 +751,10 @@ func TestOpenCodeConfig_Basic(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
+	cfg := f.store.Get()
+	cfg.Global.OpenCodeContextOutput = 8192
+	require.NoError(t, f.store.Set(cfg))
+
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "application/jsonc", resp.Header.Get("Content-Type"))
@@ -905,8 +909,9 @@ func TestOpenCodeConfig_AutoMode_Defaults(t *testing.T) {
 	f.addBackend(t, []string{"smart"}, nil)
 
 	cfg := f.store.Get()
-	cfg.Global.OpenCodeContextBuffer = 4000
+	cfg.Global.OpenCodeContextBuffer = 1024
 	cfg.Global.OpenCodeContextInput = 0 // auto mode
+	cfg.Global.OpenCodeContextOutput = 8192
 	require.NoError(t, f.store.Set(cfg))
 
 	f.start(t)
@@ -915,7 +920,7 @@ func TestOpenCodeConfig_AutoMode_Defaults(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// config ignored: outLimit=8192, buffer=1024, inLimit=8192-8192-1024=-1024→clamp to 0, outLimit=8192-1024=7168
+	// ctx=8192, outLimit=8192, buffer=1024, inLimit=8192-8192-1024=-1024→clamp to 0, outLimit=8192-1024=7168
 	assert.Contains(t, string(body), `"input": 0`)
 	assert.Contains(t, string(body), `"output": 7168`)
 }
@@ -927,6 +932,7 @@ func TestOpenCodeConfig_AutoMode_LargeBuffer(t *testing.T) {
 	cfg := f.store.Get()
 	cfg.Global.OpenCodeContextBuffer = 10000
 	cfg.Global.OpenCodeContextInput = 0 // auto mode
+	cfg.Global.OpenCodeContextOutput = 8192
 	require.NoError(t, f.store.Set(cfg))
 
 	f.start(t)
@@ -935,9 +941,9 @@ func TestOpenCodeConfig_AutoMode_LargeBuffer(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// config ignored: outLimit=8192, buffer=1024, inLimit=8192-8192-1024=-1024→clamp to 0, outLimit=8192-1024=7168
+	// ctx=8192, outLimit=8192, buffer=10000, inLimit=8192-8192-10000=-10000→clamp to 0, outLimit=-1808→clamp to 0
 	assert.Contains(t, string(body), `"input": 0`)
-	assert.Contains(t, string(body), `"output": 7168`)
+	assert.Contains(t, string(body), `"output": 0`)
 }
 
 func TestOpenCodeConfig_ExplicitMode(t *testing.T) {
@@ -947,6 +953,7 @@ func TestOpenCodeConfig_ExplicitMode(t *testing.T) {
 	cfg := f.store.Get()
 	cfg.Global.OpenCodeContextBuffer = 8000
 	cfg.Global.OpenCodeContextInput = 2000 // explicit mode
+	cfg.Global.OpenCodeContextOutput = 8192
 	require.NoError(t, f.store.Set(cfg))
 
 	f.start(t)
@@ -955,9 +962,9 @@ func TestOpenCodeConfig_ExplicitMode(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// config ignored: outLimit=8192, buffer=1024, inLimit=8192-8192-1024=-1024→clamp to 0, outLimit=8192-1024=7168
+	// ctx=8192, outLimit=8192, buffer=8000, inLimit=8192-8192-8000=-8000→clamp to 0, outLimit=8192-8000=192
 	assert.Contains(t, string(body), `"input": 0`)
-	assert.Contains(t, string(body), `"output": 7168`)
+	assert.Contains(t, string(body), `"output": 192`)
 }
 
 func TestOpenCodeConfig_ExplicitMode_Large(t *testing.T) {
@@ -967,6 +974,7 @@ func TestOpenCodeConfig_ExplicitMode_Large(t *testing.T) {
 	cfg := f.store.Get()
 	cfg.Global.OpenCodeContextBuffer = 20000
 	cfg.Global.OpenCodeContextInput = 5000 // explicit mode
+	cfg.Global.OpenCodeContextOutput = 8192
 	require.NoError(t, f.store.Set(cfg))
 
 	f.start(t)
@@ -975,9 +983,9 @@ func TestOpenCodeConfig_ExplicitMode_Large(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// config ignored: outLimit=8192, buffer=1024, inLimit=8192-8192-1024=-1024→clamp to 0, outLimit=8192-1024=7168
+	// ctx=8192, outLimit=8192, buffer=20000, inLimit=8192-8192-20000=-20000→clamp to 0, outLimit=-11808→clamp to 0
 	assert.Contains(t, string(body), `"input": 0`)
-	assert.Contains(t, string(body), `"output": 7168`)
+	assert.Contains(t, string(body), `"output": 0`)
 }
 
 func TestOpenCodeConfig_ExplicitMode_GuardInput(t *testing.T) {
@@ -987,6 +995,7 @@ func TestOpenCodeConfig_ExplicitMode_GuardInput(t *testing.T) {
 	cfg := f.store.Get()
 	cfg.Global.OpenCodeContextBuffer = 1500
 	cfg.Global.OpenCodeContextInput = 0 // auto mode, but buffer < 3000
+	cfg.Global.OpenCodeContextOutput = 8192
 	require.NoError(t, f.store.Set(cfg))
 
 	f.start(t)
@@ -995,9 +1004,9 @@ func TestOpenCodeConfig_ExplicitMode_GuardInput(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// config ignored: outLimit=8192, buffer=1024, inLimit=8192-8192-1024=-1024→clamp to 0, outLimit=8192-1024=7168
+	// ctx=8192, outLimit=8192, buffer=1500, inLimit=8192-8192-1500=-1500→clamp to 0, outLimit=8192-1500=6692
 	assert.Contains(t, string(body), `"input": 0`)
-	assert.Contains(t, string(body), `"output": 7168`)
+	assert.Contains(t, string(body), `"output": 6692`)
 }
 
 func TestOpenCodeConfig_ExplicitMode_GuardOutput(t *testing.T) {
@@ -1007,6 +1016,7 @@ func TestOpenCodeConfig_ExplicitMode_GuardOutput(t *testing.T) {
 	cfg := f.store.Get()
 	cfg.Global.OpenCodeContextBuffer = 1500
 	cfg.Global.OpenCodeContextInput = 100 // explicit mode
+	cfg.Global.OpenCodeContextOutput = 8192
 	require.NoError(t, f.store.Set(cfg))
 
 	f.start(t)
@@ -1015,9 +1025,9 @@ func TestOpenCodeConfig_ExplicitMode_GuardOutput(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// config ignored: outLimit=8192, buffer=1024, inLimit=8192-8192-1024=-1024→clamp to 0, outLimit=8192-1024=7168
+	// ctx=8192, outLimit=8192, buffer=1500, inLimit=8192-8192-1500=-1500→clamp to 0, outLimit=8192-1500=6692
 	assert.Contains(t, string(body), `"input": 0`)
-	assert.Contains(t, string(body), `"output": 7168`)
+	assert.Contains(t, string(body), `"output": 6692`)
 }
 
 // httpDo executes an *http.Request built externally and returns the response.
