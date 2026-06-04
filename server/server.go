@@ -86,6 +86,7 @@ func (s *Server) setupRoutes() {
 	s.mux.Get("/admin/status", s.handleStatus)
 	s.mux.Get("/admin/opencode-config", s.handleOpenCodeConfig)
 	s.mux.Get("/admin/metrics", s.handleMetrics)
+	s.mux.Post("/opencode/config", s.handlePostOpenCodeConfig)
 
 	// Admin UI static files (must be registered after API routes to avoid conflicts)
 	webFS := http.FS(web.Static)
