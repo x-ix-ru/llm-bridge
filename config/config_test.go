@@ -128,3 +128,45 @@ func TestFallbackStrategyValid(t *testing.T) {
 	assert.True(t, FallbackQueue.Valid())
 	assert.False(t, FallbackStrategy("unknown").Valid())
 }
+
+func TestOpenCodeContextDefaults(t *testing.T) {
+	cfg := DefaultConfig()
+	assert.Equal(t, 4000, cfg.Global.OpenCodeContextBuffer)
+	assert.Equal(t, 0, cfg.Global.OpenCodeContextInput)
+}
+
+func TestOpenCodeContextLoad_Override(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	yamlContent := `
+global:
+  fallback_strategy: queue
+  opencode_context_buffer: 5000
+`
+	err := os.WriteFile(path, []byte(yamlContent), 0644)
+	require.NoError(t, err)
+
+	store := NewStore(path)
+	err = store.Load()
+	require.NoError(t, err)
+
+	cfg := store.Get()
+	assert.Equal(t, 5000, cfg.Global.OpenCodeContextBuffer)
+	assert.Equal(t, 0, cfg.Global.OpenCodeContextInput)
+}
+
+func TestOpenCodeContextSet_InvalidBuffer(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	store := NewStore(path)
+
+	err := store.Load()
+	require.NoError(t, err)
+
+	cfg := store.Get()
+	cfg.Global.OpenCodeContextBuffer = -1
+
+	err = store.Set(cfg)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "opencode_context_buffer must be > 0")
+}

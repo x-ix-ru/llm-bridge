@@ -803,9 +803,9 @@ func TestOpenCodeConfig_WithMaxModelLen(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// max_model_len=32768 → context=32768, input=32768-4000=28768, output=3000
+	// max_model_len=32768 → context=32768, buffer=4000, auto mode: output=3000, input=4000-3000=1000
 	assert.Contains(t, string(body), `"context": 32768`)
-	assert.Contains(t, string(body), `"input": 28768`)
+	assert.Contains(t, string(body), `"input": 1000`)
 	assert.Contains(t, string(body), `"output": 3000`)
 }
 
@@ -874,9 +874,9 @@ func TestOpenCodeConfig_ContextLimitFromVLLM(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// vLLM-style: max_model_len=65536 → context=65536, input=65536-4000=61536
+	// vLLM-style: max_model_len=65536 → context=65536, buffer=4000, auto mode: output=3000, input=4000-3000=1000
 	assert.Contains(t, string(body), `"context": 65536`)
-	assert.Contains(t, string(body), `"input": 61536`)
+	assert.Contains(t, string(body), `"input": 1000`)
 	assert.Contains(t, string(body), `"output": 3000`)
 }
 
@@ -890,9 +890,135 @@ func TestOpenCodeConfig_NoMaxModelLen(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// Should fall back to default 8192 → context=8192, input=8192-4000=4192
+	// Should fall back to default 8192 → context=8192, buffer=4000, auto mode: output=3000, input=4000-3000=1000
 	assert.Contains(t, string(body), `"context": 8192`)
-	assert.Contains(t, string(body), `"input": 4192`)
+	assert.Contains(t, string(body), `"input": 1000`)
+	assert.Contains(t, string(body), `"output": 3000`)
+}
+
+// ---------------------------------------------------------------------------
+// OpenCode Config: formula edge-case tests
+// ---------------------------------------------------------------------------
+
+func TestOpenCodeConfig_AutoMode_Defaults(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"smart"}, nil)
+
+	cfg := f.store.Get()
+	cfg.Global.OpenCodeContextBuffer = 4000
+	cfg.Global.OpenCodeContextInput = 0 // auto mode
+	require.NoError(t, f.store.Set(cfg))
+
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// buffer=4000, input=0 (auto) → output=3000, input=1000
+	assert.Contains(t, string(body), `"input": 1000`)
+	assert.Contains(t, string(body), `"output": 3000`)
+}
+
+func TestOpenCodeConfig_AutoMode_LargeBuffer(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"smart"}, nil)
+
+	cfg := f.store.Get()
+	cfg.Global.OpenCodeContextBuffer = 10000
+	cfg.Global.OpenCodeContextInput = 0 // auto mode
+	require.NoError(t, f.store.Set(cfg))
+
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// buffer=10000, input=0 (auto) → output=3000, input=7000
+	assert.Contains(t, string(body), `"input": 7000`)
+	assert.Contains(t, string(body), `"output": 3000`)
+}
+
+func TestOpenCodeConfig_ExplicitMode(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"smart"}, nil)
+
+	cfg := f.store.Get()
+	cfg.Global.OpenCodeContextBuffer = 8000
+	cfg.Global.OpenCodeContextInput = 2000 // explicit mode
+	require.NoError(t, f.store.Set(cfg))
+
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// buffer=8000, input=2000 (explicit) → output=6000, input=2000
+	assert.Contains(t, string(body), `"input": 2000`)
+	assert.Contains(t, string(body), `"output": 6000`)
+}
+
+func TestOpenCodeConfig_ExplicitMode_Large(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"smart"}, nil)
+
+	cfg := f.store.Get()
+	cfg.Global.OpenCodeContextBuffer = 20000
+	cfg.Global.OpenCodeContextInput = 5000 // explicit mode
+	require.NoError(t, f.store.Set(cfg))
+
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// buffer=20000, input=5000 (explicit) → output=15000, input=5000
+	assert.Contains(t, string(body), `"input": 5000`)
+	assert.Contains(t, string(body), `"output": 15000`)
+}
+
+func TestOpenCodeConfig_ExplicitMode_GuardInput(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"smart"}, nil)
+
+	cfg := f.store.Get()
+	cfg.Global.OpenCodeContextBuffer = 1500
+	cfg.Global.OpenCodeContextInput = 0 // auto mode, but buffer < 3000
+	require.NoError(t, f.store.Set(cfg))
+
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Auto mode: outLimit=3000, inLimit=1500-3000=-1500 → clamped to 1000
+	// Guards: outLimit stays 3000, inLimit clamped to 1000
+	assert.Contains(t, string(body), `"input": 1000`)
+	assert.Contains(t, string(body), `"output": 3000`)
+}
+
+func TestOpenCodeConfig_ExplicitMode_GuardOutput(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"smart"}, nil)
+
+	cfg := f.store.Get()
+	cfg.Global.OpenCodeContextBuffer = 1500
+	cfg.Global.OpenCodeContextInput = 100 // explicit mode
+	require.NoError(t, f.store.Set(cfg))
+
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	// Explicit: outLimit=1500-100=1400 → clamped to 3000
+	// inLimit=100 → clamped to 1000
+	assert.Contains(t, string(body), `"input": 1000`)
 	assert.Contains(t, string(body), `"output": 3000`)
 }
 
@@ -1307,7 +1433,7 @@ func TestIntegration_NoRegression(t *testing.T) {
 	}{
 		{"GET", "/v1/models", nil},
 		{"POST", "/v1/chat/completions", map[string]interface{}{
-			"model": "gpt-4",
+			"model":    "gpt-4",
 			"messages": []map[string]string{{"role": "user", "content": "hello"}},
 		}},
 		{"GET", "/admin/servers", nil},
@@ -1325,4 +1451,3 @@ func TestIntegration_NoRegression(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode, name)
 	}
 }
-

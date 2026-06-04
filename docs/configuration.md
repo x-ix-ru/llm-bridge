@@ -16,6 +16,8 @@ Detailed description of all configuration options for the llm-bridge proxy serve
   - [drain_timeout_sec / Таймаут дренажа](#drain_timeout_sec--таймаут-дренажа)
   - [shutdown_timeout_sec / Таймаут завершения](#shutdown_timeout_sec--таймаут-завершения)
   - [opencode_base_url / Базовый URL opencode](#opencode_base_url--базовый-url-opencode)
+  - [opencode_context_buffer / Буфер контекстного окна](#opencode_context_buffer--буфер-контекстного-окна)
+  - [opencode_context_input / Выделение токенов для входа](#opencode_context_input--выделение-токенов-для-входа)
 - [Server Configuration / Конфигурация серверов](#server-configuration--конфигурация-серверов)
   - [url / URL](#url--url)
   - [distance / Приоритет](#distance--приоритет)
@@ -41,6 +43,8 @@ global:
     drain_timeout_sec: 30
     shutdown_timeout_sec: 10
     opencode_base_url: "http://localhost:8080"
+    opencode_context_buffer: 4000
+    opencode_context_input: 0
 
 servers:
     - url: "http://localhost:8081"
@@ -134,6 +138,77 @@ Type / Тип: `string` (optional/опционально)
 
 Base URL used when generating `opencode.jsonc` configuration. Defaults to the bridge address if not set.
 Базовый URL, используемый при генерации конфигурации `opencode.jsonc`. Если не установлен, по умолчанию используется адрес прокси.
+
+---
+
+### opencode_context_buffer / Буфер контекстного окна
+
+Type / Тип: `int`
+Default / По умолчанию: `4000`
+Range / Диапазон: `> 0` tokens
+
+The number of tokens reserved as a buffer in the context window. This buffer is split between input and output tokens based on the `opencode_context_input` setting. The total context is divided as:
+
+```
+context = opencode_context_buffer + opencode_context_input + opencode_context_output
+```
+
+The `opencode_context_output` is calculated automatically based on the mode set by `opencode_context_input`:
+
+- **Auto mode** (`opencode_context_input = 0`): `output = 3000`, `input = buffer - 3000`
+- **Explicit mode** (`opencode_context_input > 0`): `output = buffer - input`
+
+Guards ensure minimum token allocations:
+- Minimum input: `1000` tokens
+- Minimum output: `3000` tokens
+
+If the calculated values would violate these minimums, the values are clamped accordingly and a warning is logged.
+
+---
+
+### opencode_context_input / Выделение токенов для входа
+
+Type / Тип: `int`
+Default / По умолчанию: `0` (auto/авто)
+Range / Диапазон: `>= 0` tokens
+
+Controls how the context buffer is split between input (prompt) and output (completion) tokens.
+
+- `0` — **Auto mode**: output is fixed at `3000` tokens, input receives the remainder (`buffer - 3000`).
+- `> 0` — **Explicit mode**: input is set to the given value, output receives the remainder (`buffer - input`).
+
+#### Auto mode example (default)
+
+```yaml
+global:
+    opencode_context_buffer: 4000
+    opencode_context_input: 0  # auto mode
+# Result / Результат:
+#   output = 3000
+#   input  = 4000 - 3000 = 1000
+```
+
+#### Explicit mode example
+
+```yaml
+global:
+    opencode_context_buffer: 4000
+    opencode_context_input: 2000  # explicit: reserve 2000 tokens for input
+# Result / Результат:
+#   input  = 2000
+#   output = 4000 - 2000 = 2000
+```
+
+#### Explicit mode with larger buffer
+
+```yaml
+global:
+    opencode_context_buffer: 6000
+    opencode_context_input: 1500  # explicit: 1500 for input, 4500 for output
+# Result / Результат:
+#   input  = 1500
+#   output = 6000 - 1500 = 4500
+```
 
 ---
 

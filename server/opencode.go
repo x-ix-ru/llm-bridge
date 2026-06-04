@@ -56,8 +56,8 @@ const defaultProviderName = "llm-bridge"
 // "llm-bridge" provider (all external providers are implicitly disabled).
 func (s *Server) handleOpenCodeConfig(w http.ResponseWriter, r *http.Request) {
 	baseURL := r.URL.Query().Get("base_url")
+	cfg := s.cfg.Get()
 	if baseURL == "" {
-		cfg := s.cfg.Get()
 		baseURL = cfg.Global.OpenCodeBaseURL
 	}
 	if baseURL == "" {
@@ -81,13 +81,31 @@ func (s *Server) handleOpenCodeConfig(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(modelNames)
 
 	// Build model entries inside the single llm-bridge provider.
+	buffer := cfg.Global.OpenCodeContextBuffer
+	input := cfg.Global.OpenCodeContextInput
+
 	modelEntries := make(map[string]opencodeModelEntry, len(modelNames))
 	for _, name := range modelNames {
 		ctx := extractMaxModelLen(details[name])
-		outLimit := defaultGenerationLimit
-		inLimit := ctx - 4000
+
+		var outLimit, inLimit int
+
+		if input == 0 {
+			// Auto mode: output fixed at 3000, input = buffer - 3000
+			outLimit = 3000
+			inLimit = buffer - outLimit
+		} else {
+			// Explicit mode: output = buffer - input
+			outLimit = buffer - input
+			inLimit = input
+		}
+
+		// Apply guards
 		if inLimit < 1000 {
 			inLimit = 1000
+		}
+		if outLimit < 3000 {
+			outLimit = 3000
 		}
 
 		modelEntries[name] = opencodeModelEntry{

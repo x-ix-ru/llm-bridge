@@ -34,13 +34,15 @@ type ServerConfig struct {
 }
 
 type GlobalConfig struct {
-	FallbackStrategy     FallbackStrategy `yaml:"fallback_strategy"`
-	DiscoveryIntervalSec int              `yaml:"discovery_interval_sec"`
-	RequestTimeoutSec    int              `yaml:"request_timeout_sec"`
-	QueueTimeoutSec      int              `yaml:"queue_timeout_sec"`
-	DrainTimeoutSec      int              `yaml:"drain_timeout_sec"`
-	ShutdownTimeoutSec   int              `yaml:"shutdown_timeout_sec"`
-	OpenCodeBaseURL      string           `yaml:"opencode_base_url,omitempty"`
+	FallbackStrategy      FallbackStrategy `yaml:"fallback_strategy"`
+	DiscoveryIntervalSec  int              `yaml:"discovery_interval_sec"`
+	RequestTimeoutSec     int              `yaml:"request_timeout_sec"`
+	QueueTimeoutSec       int              `yaml:"queue_timeout_sec"`
+	DrainTimeoutSec       int              `yaml:"drain_timeout_sec"`
+	ShutdownTimeoutSec    int              `yaml:"shutdown_timeout_sec"`
+	OpenCodeBaseURL       string           `yaml:"opencode_base_url,omitempty"`
+	OpenCodeContextBuffer int              `yaml:"opencode_context_buffer,omitempty"`
+	OpenCodeContextInput  int              `yaml:"opencode_context_input,omitempty"`
 }
 
 type Config struct {
@@ -51,12 +53,14 @@ type Config struct {
 func DefaultConfig() Config {
 	return Config{
 		Global: GlobalConfig{
-			FallbackStrategy:     FallbackError,
-			DiscoveryIntervalSec: 15,
-			RequestTimeoutSec:    60,
-			QueueTimeoutSec:      30,
-			DrainTimeoutSec:      30,
-			ShutdownTimeoutSec:   10,
+			FallbackStrategy:      FallbackError,
+			DiscoveryIntervalSec:  15,
+			RequestTimeoutSec:     60,
+			QueueTimeoutSec:       30,
+			DrainTimeoutSec:       30,
+			ShutdownTimeoutSec:    10,
+			OpenCodeContextBuffer: 4000,
+			OpenCodeContextInput:  0,
 		},
 		Servers: []ServerConfig{},
 	}
@@ -111,6 +115,9 @@ func (s *Store) Load() error {
 	if cfg.Global.ShutdownTimeoutSec <= 0 {
 		cfg.Global.ShutdownTimeoutSec = 10
 	}
+	if cfg.Global.OpenCodeContextBuffer <= 0 {
+		cfg.Global.OpenCodeContextBuffer = 4000
+	}
 
 	s.config = cfg
 	return nil
@@ -142,6 +149,13 @@ func (s *Store) Set(cfg Config) error {
 		if sv.MaxConcurrentRequests <= 0 {
 			return fmt.Errorf("server %d: max_concurrent_requests must be > 0", i)
 		}
+	}
+
+	if cfg.Global.OpenCodeContextBuffer == 0 {
+		cfg.Global.OpenCodeContextBuffer = 4000
+	}
+	if cfg.Global.OpenCodeContextBuffer < 0 {
+		return fmt.Errorf("opencode_context_buffer must be > 0")
 	}
 
 	s.config = cfg
