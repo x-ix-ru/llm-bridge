@@ -755,7 +755,7 @@ func TestOpenCodeConfig_Basic(t *testing.T) {
 	cfg.Global.OpenCodeContextOutput = 8192
 	require.NoError(t, f.store.Set(cfg))
 
-	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	resp, body := f.do("GET", "/opencode/config", nil)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 	assert.Equal(t, "application/jsonc", resp.Header.Get("Content-Type"))
 
@@ -804,7 +804,7 @@ func TestOpenCodeConfig_WithMaxModelLen(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
-	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	resp, body := f.do("GET", "/opencode/config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// max_model_len=32768 → context=32768, outLimit=8192, buffer=1024, inLimit=32768-8192-1024=23552
@@ -820,7 +820,7 @@ func TestOpenCodeConfig_CustomBaseURL(t *testing.T) {
 	defer f.cleanup()
 
 	// Pass custom base_url via query param.
-	resp, body := f.do("GET", "/admin/opencode-config?base_url=http://my-bridge:8080", nil)
+	resp, body := f.do("GET", "/opencode/config?base_url=http://my-bridge:8080", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	assert.Contains(t, string(body), `"baseURL": "http://my-bridge:8080/v1"`)
@@ -831,7 +831,7 @@ func TestOpenCodeConfig_NoModels(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
-	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	resp, body := f.do("GET", "/opencode/config", nil)
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Should have empty models under provider and enabled_providers with llm-bridge.
@@ -875,7 +875,7 @@ func TestOpenCodeConfig_ContextLimitFromVLLM(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
-	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	resp, body := f.do("GET", "/opencode/config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// vLLM-style: max_model_len=65536 → context=65536, outLimit=8192, buffer=1024, inLimit=65536-8192-1024=56320
@@ -891,7 +891,7 @@ func TestOpenCodeConfig_NoMaxModelLen(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
-	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	resp, body := f.do("GET", "/opencode/config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// Should fall back to default 8192 → context=8192, outLimit=8192, buffer=1024, inLimit negative → clamp to 0, outLimit=8192-1024=7168
@@ -917,7 +917,7 @@ func TestOpenCodeConfig_AutoMode_Defaults(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
-	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	resp, body := f.do("GET", "/opencode/config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// ctx=8192, outLimit=8192, buffer=1024, inLimit=8192-8192-1024=-1024→clamp to 0, outLimit=8192-1024=7168
@@ -938,7 +938,7 @@ func TestOpenCodeConfig_AutoMode_LargeBuffer(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
-	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	resp, body := f.do("GET", "/opencode/config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// ctx=8192, outLimit=8192, buffer=10000, inLimit=8192-8192-10000=-10000→clamp to 0, outLimit=-1808→clamp to 0
@@ -959,7 +959,7 @@ func TestOpenCodeConfig_ExplicitMode(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
-	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	resp, body := f.do("GET", "/opencode/config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// ctx=8192, outLimit=8192, buffer=8000, inLimit=8192-8192-8000=-8000→clamp to 0, outLimit=8192-8000=192
@@ -980,7 +980,7 @@ func TestOpenCodeConfig_ExplicitMode_Large(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
-	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	resp, body := f.do("GET", "/opencode/config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// ctx=8192, outLimit=8192, buffer=20000, inLimit=8192-8192-20000=-20000→clamp to 0, outLimit=-11808→clamp to 0
@@ -1001,7 +1001,7 @@ func TestOpenCodeConfig_ExplicitMode_GuardInput(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
-	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	resp, body := f.do("GET", "/opencode/config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// ctx=8192, outLimit=8192, buffer=1500, inLimit=8192-8192-1500=-1500→clamp to 0, outLimit=8192-1500=6692
@@ -1022,7 +1022,7 @@ func TestOpenCodeConfig_ExplicitMode_GuardOutput(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
-	resp, body := f.do("GET", "/admin/opencode-config", nil)
+	resp, body := f.do("GET", "/opencode/config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
 	// ctx=8192, outLimit=8192, buffer=1500, inLimit=8192-8192-1500=-1500→clamp to 0, outLimit=8192-1500=6692
@@ -1530,11 +1530,11 @@ func TestPostOpenCodeConfig_EmptyBody(t *testing.T) {
 	defer f.cleanup()
 
 	resp, body := f.do("POST", "/opencode/config", []byte(""))
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	var errResp map[string]interface{}
-	json.Unmarshal(body, &errResp)
-	assert.Contains(t, errResp, "error")
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, `// Auto-generated by llm-bridge`)
+	assert.Contains(t, bodyStr, `"llm-bridge"`)
 }
 
 func TestPostOpenCodeConfig_InvalidJSON(t *testing.T) {
@@ -1559,9 +1559,13 @@ func TestPostOpenCodeConfig_OnlyComments(t *testing.T) {
 	f.start(t)
 	defer f.cleanup()
 
-	// Config that is only comments — should fail to parse as JSON.
-	resp, _ := f.do("POST", "/opencode/config", []byte("// just a comment\n// another comment"))
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+	// Config that is only comments — should be treated as empty {} → llm-bridge config.
+	resp, body := f.do("POST", "/opencode/config", []byte("// just a comment\n// another comment"))
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, `// Auto-generated by llm-bridge`)
+	assert.Contains(t, bodyStr, `"gpt-4"`)
 }
 
 func TestPostOpenCodeConfig_BaseURLOverride(t *testing.T) {

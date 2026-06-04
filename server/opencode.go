@@ -257,16 +257,14 @@ func (s *Server) handlePostOpenCodeConfig(w http.ResponseWriter, r *http.Request
 	}
 
 	content := strings.TrimSpace(string(bodyBytes))
-	if content == "" {
-		s.respondError(w, http.StatusBadRequest, "invalid JSON body")
-		return
-	}
 
-	// Strip JSONC comments if present.
 	if strings.Contains(content, "//") {
 		content = stripJSONC(content)
 	}
 	content = strings.TrimSpace(content)
+	if content == "" {
+		content = "{}"
+	}
 
 	// Parse as generic JSON.
 	var parsed map[string]interface{}

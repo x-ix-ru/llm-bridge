@@ -84,7 +84,7 @@ func (s *Server) setupRoutes() {
 	s.mux.Get("/admin/config", s.handleGetConfig)
 	s.mux.Put("/admin/config", s.handlePutConfig)
 	s.mux.Get("/admin/status", s.handleStatus)
-	s.mux.Get("/admin/opencode-config", s.handleOpenCodeConfig)
+	s.mux.Get("/opencode/config", s.handleOpenCodeConfig)
 	s.mux.Get("/admin/metrics", s.handleMetrics)
 	s.mux.Post("/opencode/config", s.handlePostOpenCodeConfig)
 
