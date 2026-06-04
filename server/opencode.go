@@ -116,23 +116,19 @@ func (s *Server) buildModelEntries() map[string]opencodeModelEntry {
 	}
 	sort.Strings(modelNames)
 
-	buffer := s.cfg.Get().Global.OpenCodeContextBuffer
-	input := s.cfg.Get().Global.OpenCodeContextInput
-
 	entries := make(map[string]opencodeModelEntry, len(modelNames))
 	for _, name := range modelNames {
 		ctx := extractMaxModelLen(details[name])
-
-		inLimit := input
-		if inLimit == 0 {
-			inLimit = buffer
+		outLimit := 8192
+		buffer := 1024
+		inLimit := ctx - outLimit - buffer
+		if inLimit < 0 {
+			inLimit = 0
+			outLimit = ctx - buffer
 		}
-		if inLimit > ctx {
-			inLimit = ctx / 4
-		}
-		outLimit := ctx - inLimit
-		if outLimit < 1000 {
-			outLimit = 1000
+		if outLimit < 0 {
+			outLimit = 0
+			inLimit = ctx - buffer
 		}
 
 		entries[name] = opencodeModelEntry{
@@ -269,37 +265,9 @@ func (s *Server) handlePostOpenCodeConfig(w http.ResponseWriter, r *http.Request
 		s.respondError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
+	_ = parsed
 
-	// Extract context limits from the user's config if present.
-	// Check nested structures: provider["provider-name"]["models"] or top-level.
-	buffer := s.cfg.Get().Global.OpenCodeContextBuffer
-	input := s.cfg.Get().Global.OpenCodeContextInput
-
-	// Try to find context limits in the parsed config.
-	if models, ok := parsed["models"].(map[string]interface{}); ok {
-		for _, modelData := range models {
-			if md, ok := modelData.(map[string]interface{}); ok {
-				if l, ok := md["limit"].(map[string]interface{}); ok {
-					if inp, ok := l["input"].(float64); ok && inp > 0 {
-						input = int(inp)
-					}
-					if ctx, ok := l["context"].(float64); ok {
-						_ = ctx // context from user config is informational only
-					}
-				}
-			}
-		}
-	}
-
-	// Override buffer/input if explicitly set in config.
-	if cfg := s.cfg.Get(); cfg.Global.OpenCodeContextInput > 0 {
-		input = cfg.Global.OpenCodeContextInput
-	}
-	if cfg := s.cfg.Get(); cfg.Global.OpenCodeContextBuffer > 0 {
-		buffer = cfg.Global.OpenCodeContextBuffer
-	}
-
-	// Build model entries with the (potentially user-derived) limits.
+	// Build model entries with default limits.
 	models := s.disc.Models()
 	details := s.disc.ModelDetails()
 
@@ -312,17 +280,16 @@ func (s *Server) handlePostOpenCodeConfig(w http.ResponseWriter, r *http.Request
 	modelEntries := make(map[string]opencodeModelEntry, len(modelNames))
 	for _, name := range modelNames {
 		ctx := extractMaxModelLen(details[name])
-
-		inLimit := input
-		if inLimit == 0 {
-			inLimit = buffer
+		outLimit := 8192
+		buffer := 1024
+		inLimit := ctx - outLimit - buffer
+		if inLimit < 0 {
+			inLimit = 0
+			outLimit = ctx - buffer
 		}
-		if inLimit > ctx {
-			inLimit = ctx / 4
-		}
-		outLimit := ctx - inLimit
-		if outLimit < 1000 {
-			outLimit = 1000
+		if outLimit < 0 {
+			outLimit = 0
+			inLimit = ctx - buffer
 		}
 
 		modelEntries[name] = opencodeModelEntry{
