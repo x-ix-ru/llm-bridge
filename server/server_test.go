@@ -759,8 +759,8 @@ func TestOpenCodeConfig_Basic(t *testing.T) {
 	assert.Contains(t, string(body), `"gpt-4"`)
 	assert.Contains(t, string(body), `"gpt-3.5-turbo"`)
 	assert.Contains(t, string(body), `"baseURL"`)
-	assert.Contains(t, string(body), `"output": 3000`)
-	assert.Contains(t, string(body), `"input"`)
+	assert.Contains(t, string(body), `"output": 4192`)
+	assert.Contains(t, string(body), `"input": 4000`)
 	assert.Contains(t, string(body), `"context"`)
 	assert.Contains(t, string(body), `"sk-llm-bridge`)
 	assert.Contains(t, string(body), `"enabled_providers"`)
@@ -803,10 +803,10 @@ func TestOpenCodeConfig_WithMaxModelLen(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// max_model_len=32768 → context=32768, buffer=4000, auto mode: output=3000, input=4000-3000=1000
+	// max_model_len=32768 → context=32768, buffer=4000, auto mode: inLimit=buffer=4000, outLimit=32768-4000=28768
 	assert.Contains(t, string(body), `"context": 32768`)
-	assert.Contains(t, string(body), `"input": 1000`)
-	assert.Contains(t, string(body), `"output": 3000`)
+	assert.Contains(t, string(body), `"input": 4000`)
+	assert.Contains(t, string(body), `"output": 28768`)
 }
 
 func TestOpenCodeConfig_CustomBaseURL(t *testing.T) {
@@ -874,10 +874,10 @@ func TestOpenCodeConfig_ContextLimitFromVLLM(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// vLLM-style: max_model_len=65536 → context=65536, buffer=4000, auto mode: output=3000, input=4000-3000=1000
+	// vLLM-style: max_model_len=65536 → context=65536, buffer=4000, auto mode: inLimit=buffer=4000, outLimit=65536-4000=61536
 	assert.Contains(t, string(body), `"context": 65536`)
-	assert.Contains(t, string(body), `"input": 1000`)
-	assert.Contains(t, string(body), `"output": 3000`)
+	assert.Contains(t, string(body), `"input": 4000`)
+	assert.Contains(t, string(body), `"output": 61536`)
 }
 
 func TestOpenCodeConfig_NoMaxModelLen(t *testing.T) {
@@ -890,10 +890,10 @@ func TestOpenCodeConfig_NoMaxModelLen(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// Should fall back to default 8192 → context=8192, buffer=4000, auto mode: output=3000, input=4000-3000=1000
+	// Should fall back to default 8192 → context=8192, buffer=4000, auto mode: inLimit=buffer=4000, outLimit=8192-4000=4192
 	assert.Contains(t, string(body), `"context": 8192`)
-	assert.Contains(t, string(body), `"input": 1000`)
-	assert.Contains(t, string(body), `"output": 3000`)
+	assert.Contains(t, string(body), `"input": 4000`)
+	assert.Contains(t, string(body), `"output": 4192`)
 }
 
 // ---------------------------------------------------------------------------
@@ -915,9 +915,9 @@ func TestOpenCodeConfig_AutoMode_Defaults(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// buffer=4000, input=0 (auto) → output=3000, input=1000
-	assert.Contains(t, string(body), `"input": 1000`)
-	assert.Contains(t, string(body), `"output": 3000`)
+	// buffer=4000, input=0 (auto) → inLimit=buffer=4000, outLimit=8192-4000=4192
+	assert.Contains(t, string(body), `"input": 4000`)
+	assert.Contains(t, string(body), `"output": 4192`)
 }
 
 func TestOpenCodeConfig_AutoMode_LargeBuffer(t *testing.T) {
@@ -935,9 +935,9 @@ func TestOpenCodeConfig_AutoMode_LargeBuffer(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// buffer=10000, input=0 (auto) → output=3000, input=7000
-	assert.Contains(t, string(body), `"input": 7000`)
-	assert.Contains(t, string(body), `"output": 3000`)
+	// buffer=10000, input=0 (auto) → inLimit=10000>ctx, so inLimit=ctx/4=2048, outLimit=8192-2048=6144
+	assert.Contains(t, string(body), `"input": 2048`)
+	assert.Contains(t, string(body), `"output": 6144`)
 }
 
 func TestOpenCodeConfig_ExplicitMode(t *testing.T) {
@@ -955,9 +955,9 @@ func TestOpenCodeConfig_ExplicitMode(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// buffer=8000, input=2000 (explicit) → output=6000, input=2000
+	// buffer=8000, input=2000 (explicit) → inLimit=2000, outLimit=8192-2000=6192
 	assert.Contains(t, string(body), `"input": 2000`)
-	assert.Contains(t, string(body), `"output": 6000`)
+	assert.Contains(t, string(body), `"output": 6192`)
 }
 
 func TestOpenCodeConfig_ExplicitMode_Large(t *testing.T) {
@@ -975,9 +975,9 @@ func TestOpenCodeConfig_ExplicitMode_Large(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// buffer=20000, input=5000 (explicit) → output=15000, input=5000
+	// buffer=20000, input=5000 (explicit) → inLimit=5000, outLimit=8192-5000=3192
 	assert.Contains(t, string(body), `"input": 5000`)
-	assert.Contains(t, string(body), `"output": 15000`)
+	assert.Contains(t, string(body), `"output": 3192`)
 }
 
 func TestOpenCodeConfig_ExplicitMode_GuardInput(t *testing.T) {
@@ -995,10 +995,9 @@ func TestOpenCodeConfig_ExplicitMode_GuardInput(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// Auto mode: outLimit=3000, inLimit=1500-3000=-1500 → clamped to 1000
-	// Guards: outLimit stays 3000, inLimit clamped to 1000
-	assert.Contains(t, string(body), `"input": 1000`)
-	assert.Contains(t, string(body), `"output": 3000`)
+	// Auto mode: inLimit=buffer=1500, outLimit=8192-1500=6692
+	assert.Contains(t, string(body), `"input": 1500`)
+	assert.Contains(t, string(body), `"output": 6692`)
 }
 
 func TestOpenCodeConfig_ExplicitMode_GuardOutput(t *testing.T) {
@@ -1016,10 +1015,9 @@ func TestOpenCodeConfig_ExplicitMode_GuardOutput(t *testing.T) {
 	resp, body := f.do("GET", "/admin/opencode-config", nil)
 	require.Equal(t, http.StatusOK, resp.StatusCode)
 
-	// Explicit: outLimit=1500-100=1400 → clamped to 3000
-	// inLimit=100 → clamped to 1000
-	assert.Contains(t, string(body), `"input": 1000`)
-	assert.Contains(t, string(body), `"output": 3000`)
+	// Explicit: inLimit=100, outLimit=8192-100=8092
+	assert.Contains(t, string(body), `"input": 100`)
+	assert.Contains(t, string(body), `"output": 8092`)
 }
 
 // httpDo executes an *http.Request built externally and returns the response.
@@ -1451,3 +1449,289 @@ func TestIntegration_NoRegression(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode, name)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// POST /opencode/config tests
+// ---------------------------------------------------------------------------
+
+func TestPostOpenCodeConfig_ValidJSON(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"gpt-4", "gpt-3.5-turbo"}, nil)
+	f.start(t)
+	defer f.cleanup()
+
+	// Send a valid user config (JSON with // comments).
+	userConfig := `{
+		// User's old opencode config
+		"$schema": "https://opencode.ai/config.json",
+		"enabled_providers": ["anthropic"],
+		"provider": {
+			"anthropic": {
+				"api": "anthropic",
+				"name": "anthropic",
+				"options": {
+					"baseURL": "https://api.anthropic.com",
+					"apiKey": "sk-ant-..."
+				},
+				"models": {
+					"claude-3-opus": {
+						"id": "claude-3-opus",
+						"limit": {"context": 200000, "input": 190000, "output": 10000}
+					}
+				}
+			}
+		}
+	}`
+
+	resp, body := f.do("POST", "/opencode/config", []byte(userConfig))
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "application/jsonc", resp.Header.Get("Content-Type"))
+
+	// Body should start with a // comment.
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, "// Auto-generated by llm-bridge")
+	assert.Contains(t, bodyStr, `"llm-bridge"`)
+
+	// Should contain our discovered models.
+	assert.Contains(t, bodyStr, `"gpt-4"`)
+	assert.Contains(t, bodyStr, `"gpt-3.5-turbo"`)
+}
+
+func TestPostOpenCodeConfig_ValidJSONNoComments(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"small"}, nil)
+	f.start(t)
+	defer f.cleanup()
+
+	userConfig := `{"enabled_providers": ["test"]}`
+	resp, body := f.do("POST", "/opencode/config", []byte(userConfig))
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+	assert.Equal(t, "application/jsonc", resp.Header.Get("Content-Type"))
+
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, `// Auto-generated by llm-bridge`)
+	assert.Contains(t, bodyStr, `"small"`)
+}
+
+func TestPostOpenCodeConfig_EmptyBody(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"test"}, nil)
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("POST", "/opencode/config", []byte(""))
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	var errResp map[string]interface{}
+	json.Unmarshal(body, &errResp)
+	assert.Contains(t, errResp, "error")
+}
+
+func TestPostOpenCodeConfig_InvalidJSON(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"test"}, nil)
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("POST", "/opencode/config", []byte("this is not json {"))
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+
+	var errResp map[string]interface{}
+	json.Unmarshal(body, &errResp)
+	errObj, ok := errResp["error"].(map[string]interface{})
+	require.True(t, ok)
+	assert.Equal(t, "invalid JSON body", errObj["message"])
+}
+
+func TestPostOpenCodeConfig_OnlyComments(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"gpt-4"}, nil)
+	f.start(t)
+	defer f.cleanup()
+
+	// Config that is only comments — should fail to parse as JSON.
+	resp, _ := f.do("POST", "/opencode/config", []byte("// just a comment\n// another comment"))
+	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestPostOpenCodeConfig_BaseURLOverride(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"gpt-4"}, nil)
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("POST", "/opencode/config?base_url=http://custom-bridge:9090", []byte("{}"))
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	assert.Contains(t, string(body), `"baseURL": "http://custom-bridge:9090/v1"`)
+}
+
+func TestPostOpenCodeConfig_NoModels(t *testing.T) {
+	f := setupTest(t)
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("POST", "/opencode/config", []byte("{}"))
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, `"models": {}`)
+	assert.Contains(t, bodyStr, `"enabled_providers"`)
+	assert.Contains(t, bodyStr, `"llm-bridge"`)
+}
+
+func TestPostOpenCodeConfig_UsesLLMBridgeProviderName(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"test-model"}, nil)
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("POST", "/opencode/config", []byte(`{"provider": {"anything": {}}}`))
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	bodyStr := string(body)
+	// Should have $schema, enabled_providers with llm-bridge, and provider with llm-bridge key.
+	assert.Contains(t, bodyStr, `"https://opencode.ai/config.json"`)
+	assert.Contains(t, bodyStr, `"llm-bridge"`)
+
+	// Parse and verify the JSON structure after the comment.
+	commentIdx := strings.Index(bodyStr, "\n\n")
+	require.Greater(t, commentIdx, 0)
+	jsonPart := bodyStr[commentIdx+2:]
+	var parsed map[string]interface{}
+	err := json.Unmarshal([]byte(jsonPart), &parsed)
+	require.NoError(t, err)
+
+	// Check $schema.
+	assert.Equal(t, "https://opencode.ai/config.json", parsed["$schema"])
+
+	// Check enabled_providers.
+	enabled, ok := parsed["enabled_providers"].([]interface{})
+	require.True(t, ok)
+	assert.Equal(t, 1, len(enabled))
+	assert.Equal(t, "llm-bridge", enabled[0])
+
+	// Check provider.
+	provider, ok := parsed["provider"].(map[string]interface{})
+	require.True(t, ok)
+	_, hasLLMBridge := provider["llm-bridge"]
+	assert.True(t, hasLLMBridge, "provider should contain 'llm-bridge' key")
+}
+
+func TestPostOpenCodeConfig_APIKeyIsSkLlmBridge(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"test-model"}, nil)
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("POST", "/opencode/config", []byte("{}"))
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, `sk-llm-bridge`)
+}
+
+func TestPostOpenCodeConfig_ModelsHaveLimits(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"gpt-4"}, nil)
+	f.start(t)
+	defer f.cleanup()
+
+	resp, body := f.do("POST", "/opencode/config", []byte("{}"))
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	bodyStr := string(body)
+	assert.Contains(t, bodyStr, `"gpt-4"`)
+	// Each model should have context, input, output limits.
+	assert.Contains(t, bodyStr, `"limit"`)
+	assert.Contains(t, bodyStr, `"context"`)
+	assert.Contains(t, bodyStr, `"input"`)
+	assert.Contains(t, bodyStr, `"output"`)
+}
+
+func TestPostOpenCodeConfig_CorrectsUserProvider(t *testing.T) {
+	f := setupTest(t)
+	f.addBackend(t, []string{"gpt-4"}, nil)
+	f.start(t)
+	defer f.cleanup()
+
+	// Send a config with a completely different provider.
+	userConfig := `{
+		"provider": {
+			"custom-openai": {
+				"api": "openai",
+				"name": "custom",
+				"options": {"baseURL": "https://my-custom-api.com", "apiKey": "my-key"},
+				"models": {"my-model": {"id": "my-model", "limit": {"context": 1000}}}
+			}
+		}
+	}`
+	resp, body := f.do("POST", "/opencode/config", []byte(userConfig))
+	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	bodyStr := string(body)
+	// Should NOT contain the user's provider.
+	assert.NotContains(t, bodyStr, "custom-openai")
+	assert.NotContains(t, bodyStr, "my-custom-api.com")
+	assert.NotContains(t, bodyStr, "my-key")
+	// Should contain our provider with discovered models.
+	assert.Contains(t, bodyStr, `"llm-bridge"`)
+	assert.Contains(t, bodyStr, `"gpt-4"`)
+}
+
+// ---------------------------------------------------------------------------
+// stripJSONC unit tests
+// ---------------------------------------------------------------------------
+
+func TestStripJSONC(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		expect string
+	}{
+		{
+			name:   "no comments",
+			input:  `{"key": "value"}`,
+			expect: `{"key": "value"}`,
+		},
+		{
+			name:   "single comment",
+			input:  `{"key": "value"} // comment`,
+			expect: `{"key": "value"} `,
+		},
+		{
+			name:   "comment at end of line",
+			input:  `{// start comment
+	"key": "value" // inline
+}`,
+			expect: "{\n\t\"key\": \"value\" \n}",
+		},
+		{
+			name:   "comment with // inside string preserved",
+			input:  `{"url": "https://example.com"} // comment`,
+			expect: `{"url": "https://example.com"} `,
+		},
+		{
+			name:   "multiple lines with comments",
+			input:  `{
+	// Header comment
+	"key1": "value1", // trailing
+	"key2": "value2"
+}`,
+			expect: "{\n\t\n\t\"key1\": \"value1\", \n\t\"key2\": \"value2\"\n}",
+		},
+		{
+			name:   "empty input",
+			input:  ``,
+			expect: ``,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := stripJSONC(tt.input)
+			assert.Equal(t, tt.expect, result)
+		})
+	}
+}
+
