@@ -111,6 +111,7 @@ servers:
 | `GET` | `/admin/status` | Cluster status |
 | `GET` | `/admin/metrics` | Prometheus metrics |
 | `GET` | `/admin/opencode-config` | Generated opencode.jsonc |
+| `POST` | `/opencode/config` | Restore opencode config (post broken JSONC, get back working one) |
 
 ### Admin UI / Админ-интерфейс
 
