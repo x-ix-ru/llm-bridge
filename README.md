@@ -80,6 +80,8 @@ servers:
 | `global.queue_timeout_sec` | int | 30 | Queue wait timeout in seconds |
 | `global.drain_timeout_sec` | int | 30 | Graceful drain timeout |
 | `global.shutdown_timeout_sec` | int | 10 | Shutdown grace period |
+| `global.opencode_context_buffer` | int | `4000` | Total token budget for OpenCode (auto/explicit mode, see [Configuration docs](docs/configuration.md)) |
+| `global.opencode_context_input` | int | `0` | Input token budget for OpenCode (0 = auto mode, >0 = explicit split) |
 | `servers[].url` | string | — | Backend server URL (required) |
 | `servers[].distance` | int | — | Priority (1=highest, 10=lowest) |
 | `servers[].max_concurrent_requests` | int | — | Max concurrent requests |
