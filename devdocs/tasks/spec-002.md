@@ -1,140 +1,62 @@
-# Спецификация Task 002 — Рефактор handleOpenCodeConfig() на новую формулу
+# Spec 002 — Обновить docs/configuration.md
 
 ## Описание
 
-Переписать логику расчёта `input` и `output` лимитов в `handleOpenCodeConfig()` (файл `server/opencode.go`) с учётом новых полей конфигурации и формулы `context = buffer + input + output`.
+Добавить секцию «Environment Variables / Переменные окружения» в `docs/configuration.md`.
 
 ## Полный контекст
 
-### Текущая логика (строки 86–91 opencode.go):
+Документ `docs/configuration.md` содержит полное описание YAML-конфигурации. Секция ENV должна быть добавлена как новая глава после «Configuration Persistence» и перед «Validation Rules».
 
-```go
-ctx := extractMaxModelLen(details[name])
-outLimit := defaultGenerationLimit      // 3000 (хардкод)
-inLimit := ctx - 4000                    // 4000 (хардкод)
-if inLimit < 1000 {
-    inLimit = 1000
-}
+## Технические детали реализации
+
+### Новая секция в TOC
+
+Добавить строку в TOC:
+```
+- [Environment Variables / Переменные окружения](#environment-variables--переменные-окружения)
 ```
 
-### Новая формула:
+### Новая секция
 
+```markdown
+## Environment Variables / Переменные окружения
+
+All `GlobalConfig` fields can be overridden via environment variables.
+ENV variables have the highest priority: **ENV > YAML > Default**.
+Некорректные значения игнорируются (используется YAML или default).
+Все ENV-переменные case-sensitive, верхний регистр.
+
+**Примечание для `OPENCODE_BASE_URL`**: Если переменная установлена в пустую строку (`OPENCODE_BASE_URL=""`), это переопределяет значение из YAML на пустую строку. Это отличается от остальных полей, где пустой ENV игнорируется и используется YAML-значение.
+
+| Variable | YAML Field | Type | Default | Description |
+|---|---|---|---|---|
+| `FALLBACK_STRATEGY` | `global.fallback_strategy` | string | `error` | Fallback strategy: `error`, `best_effort`, `queue` |
+| `DISCOVERY_INTERVAL_SEC` | `global.discovery_interval_sec` | int | `15` | Poll interval for `/v1/models` |
+| `REQUEST_TIMEOUT_SEC` | `global.request_timeout_sec` | int | `60` | Request timeout in seconds |
+| `QUEUE_TIMEOUT_SEC` | `global.queue_timeout_sec` | int | `30` | Queue wait timeout in seconds |
+| `DRAIN_TIMEOUT_SEC` | `global.drain_timeout_sec` | int | `30` | Graceful drain timeout |
+| `SHUTDOWN_TIMEOUT_SEC` | `global.shutdown_timeout_sec` | int | `10` | Shutdown grace period |
+| `OPENCODE_BASE_URL` | `global.opencode_base_url` | string | `""` | Base URL for opencode.jsonc generation |
+| `OPENCODE_CONTEXT_BUFFER` | `global.opencode_context_buffer` | int | `4000` | Token buffer for OpenCode context window |
+| `OPENCODE_CONTEXT_INPUT` | `global.opencode_context_input` | int | `0` | Input token allocation (0 = auto) |
+
+**Existing variables** (not GlobalConfig overrides):
+
+| Variable | Type | Default | Description |
+|---|---|---|---|
+| `CONFIG_PATH` | string | `config.yaml` | Path to YAML config file |
+| `PORT` | string | `8080` | HTTP listen port |
 ```
-context = buffer + input + output
-```
-
-Отсюда: `output = context - buffer - input`.
-
-### Значения по умолчанию:
-
-- `buffer = 4000` (из `cfg.Global.OpenCodeContextBuffer`)
-- `input = 0` означает auto → `input = context - buffer - defaultGenerationLimit`
-- При auto: `output = defaultGenerationLimit = 3000` (backward compatible)
-
-### При явном input > 0:
-
-- `output = context - buffer - input`
-
-## Технические детали
-
-### 1. Чтение конфигурации
-
-В начале `handleOpenCodeConfig()` добавить чтение конфига:
-
-```go
-cfg := s.cfg.Get()
-buffer := cfg.Global.OpenCodeContextBuffer
-inputAlloc := cfg.Global.OpenCodeContextInput
-```
-
-> **Важно**: текущий код уже читает `cfg` для `OpenCodeBaseURL` (строка 60). Нужно реорганизовать, чтобы не читать дважды.
-
-### 2. Новый блок расчёта лимитов
-
-Заменить строки 86–91 на:
-
-```go
-ctx := extractMaxModelLen(details[name])
-
-buffer := cfg.Global.OpenCodeContextBuffer
-// Note: buffer is already validated by Load()/Set() to be >= 0.
-// If it's 0, treat as default.
-if buffer <= 0 {
-    buffer = 4000
-}
-
-var inLimit, outLimit int
-
-if cfg.Global.OpenCodeContextInput > 0 {
-    // Explicit input allocation: output is derived
-    inLimit = cfg.Global.OpenCodeContextInput
-    outLimit = ctx - buffer - inLimit
-} else {
-    // Auto mode (default): preserve output = defaultGenerationLimit
-    outLimit = defaultGenerationLimit
-    inLimit = ctx - buffer - outLimit
-}
-
-// Guards for small context windows — applied in BOTH modes
-minInput := 1000
-if inLimit < minInput {
-    inLimit = minInput
-    outLimit = ctx - buffer - inLimit
-}
-// Guard minimum output — applies to explicit mode too,
-// preventing negative output when context < buffer + input
-if outLimit < defaultGenerationLimit {
-    outLimit = defaultGenerationLimit
-}
-```
-
-### 3. Сохранение констант
-
-- `defaultGenerationLimit = 3000` — оставляется как fallback minimum для output.
-- `defaultMaxModelLen = 8192` — оставляется без изменений (default context).
-- `defaultProviderName = "llm-bridge"` — без изменений.
-
-### 4. Извлечение base_url
-
-Текущий код читает `cfg` для `OpenCodeBaseURL` на строке 60. После рефакторинга `cfg` будет прочитан один раз в начале функции:
-
-```go
-cfg := s.cfg.Get()
-baseURL := r.URL.Query().Get("base_url")
-if baseURL == "" {
-    baseURL = cfg.Global.OpenCodeBaseURL
-}
-// ... остальная логика base_url ...
-```
-
-### 5. Рефакторинг extractMaxModelLen
-
-Функция `extractMaxModelLen` использует `defaultGenerationLimit` в ветке `meta.MaxTokens > 0` (строка 163):
-```go
-case meta.MaxTokens > 0:
-    return meta.MaxTokens + defaultGenerationLimit
-```
-Оставить без изменений — эта ветка вычисляет context, а не output.
 
 ## Файлы для изменения
 
-| Файл | Действие |
-|------|----------|
-| `server/opencode.go` | Рефакторинг `handleOpenCodeConfig()`: чтение конфига, новая формула, guards |
-
-## Требования к юнит-тестам
-
-Юнит-тесты покрываются в Task 003. В данной задаче — только реализация.
+- `docs/configuration.md`
 
 ## Критерии приёмки
 
-1. `handleOpenCodeConfig()` читает `OpenCodeContextBuffer` и `OpenCodeContextInput` из конфига.
-2. При значениях по умолчанию (buffer=4000, input=0): `output = 3000`, `input = context - 4000 - 3000` (backward compatible output).
-3. При явном `OpenCodeContextInput > 0`: `output = context - buffer - input`.
-4. Guard: `input >= 1000` (min input).
-5. Guard: `output >= defaultGenerationLimit` (min output = 3000).
-6. Формула `context = buffer + input + output` выполняется (за исключением случаев, когда guards увеличивают sum — это допустимо).
-7. Константы `defaultMaxModelLen` и `defaultProviderName` не изменены.
-8. `extractMaxModelLen()` не изменён.
-9. Код компилируется (`go build ./...` успешно).
-10. Существующие тесты `TestOpenCodeConfig_*` могут сломаться (новые значения) — это ожидается и будет фиксировано в Task 003.
+- Секция «Environment Variables» присутствует в `docs/configuration.md`.
+- TOC обновлён.
+- Таблица содержит все 9 ENV-переменных + 2 существующих.
+- Указан приоритет: ENV > YAML > Default.
+- Документ читается без противоречий.

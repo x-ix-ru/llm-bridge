@@ -129,6 +129,17 @@ servers:
 |---|---|---|
 | `CONFIG_PATH` | Path to YAML config file | `config.yaml` |
 | `PORT` | HTTP listen port | `8080` |
+| `FALLBACK_STRATEGY` | Fallback strategy: `error`, `best_effort`, `queue` | `error` |
+| `DISCOVERY_INTERVAL_SEC` | Poll interval for `/v1/models` | `15` |
+| `REQUEST_TIMEOUT_SEC` | Request timeout in seconds | `60` |
+| `QUEUE_TIMEOUT_SEC` | Queue wait timeout in seconds | `30` |
+| `DRAIN_TIMEOUT_SEC` | Graceful drain timeout | `30` |
+| `SHUTDOWN_TIMEOUT_SEC` | Shutdown grace period | `10` |
+| `OPENCODE_BASE_URL` | Base URL for opencode.jsonc | `""` |
+| `OPENCODE_CONTEXT_BUFFER` | Token buffer for OpenCode context | `4000` |
+| `OPENCODE_CONTEXT_INPUT` | Input token allocation (0 = auto) | `0` |
+
+All `GlobalConfig` fields can be overridden via environment variables. Priority: ENV > YAML > Default.
 
 ## License / Лицензия
 

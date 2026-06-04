@@ -1,59 +1,53 @@
-# План тестирования — Refactor OpenCode config generation
+# План тестирования — ENV переменные для GlobalConfig
 
 ---
 
 ## Функциональное тестирование
 
-### Task 001: Config fields
+### Task 001: ENV override helpers и логика
 
 | # | Сценарий | Ожидаемый результат |
 |---|----------|---------------------|
-| 1 | `DefaultConfig()` | `OpenCodeContextBuffer = 4000`, `OpenCodeContextInput = 0` |
-| 2 | YAML с `opencode_context_buffer: 2000` | Поле корректно парсится, значение = 2000 |
-| 3 | YAML с `opencode_context_input: 8000` | Поле корректно парсится, значение = 8000 |
-| 4 | YAML без новых полей (пустое) | Восстановлены defaults: 4000, 0 |
-| 5 | `Set()` с отрицательным buffer | Ошибка валидации |
-| 6 | `Set()` с отрицательным input | Ошибка валидации |
-| 7 | `Load()` с buffer = -100 | Исправлено на 4000 |
+| 1 | `envInt("NONEXISTENT", 42)` | Возвращает 42 |
+| 2 | `envInt("KEY", 42)` при `KEY=100` | Возвращает 100 |
+| 3 | `envInt("KEY", 42)` при `KEY=abc` | Возвращает 42 (невалидный → default) |
+| 4 | `envInt("KEY", 42)` при `KEY=-5` | Возвращает -5 (парсинг успешен) |
+| 5 | `envString("NONEXISTENT", "def")` | Возвращает `"def"` |
+| 6 | `envString("KEY", "def")` при `KEY=custom` | Возвращает `"custom"` |
+| 7 | `Load()` без ENV | YAML-значение сохранено |
+| 8 | `Load()` с ENV override | ENV-значение переопределило YAML |
+| 9 | `Load()` с невалидным `FALLBACK_STRATEGY` | `FallbackError` (default) |
+| 10 | `Load()` с отрицательным int ENV | Default (YAML-значение, прошедшее валидацию) |
+| 11 | `Load()` с `OPENCODE_BASE_URL` ENV | Поле переопределено |
+| 12 | `Load()` со всеми 9 ENV одновременно | Все поля переопределены корректно |
 
-### Task 002: Formula
+### Task 002: docs/configuration.md
 
-| # | Сценарий | context | buffer | input_cfg | Expected input | Expected output |
-|---|----------|---------|--------|-----------|----------------|-----------------|
-| 1 | Auto mode (default) | 8192 | 4000 | 0 | 1192 | 3000 |
-| 2 | Auto mode (large ctx) | 32768 | 4000 | 0 | 25768 | 3000 |
-| 3 | Explicit input | 32768 | 4000 | 8000 | 8000 | 20768 |
-| 4 | Custom buffer | 8192 | 2000 | 0 | 3192 | 3000 |
-| 5 | Small context | 5000 | 4000 | 0 | 1000 | 3000 |
-| 6 | Small context + explicit input | 5000 | 4000 | 3000 | 3000 | 3000 |
-| 7 | MaxTokens branch | 8192 (max_tokens=5192 + 3000) | 4000 | 0 | 1192 | 3000 |
+| # | Сценарий | Ожидаемый результат |
+|---|----------|---------------------|
+| 1 | Секция ENV присутствует | Таблица с 9 переменными + 2 существующими |
+| 2 | TOC обновлён | Ссылка на секцию ENV |
+| 3 | Приоритет указан | ENV > YAML > Default |
 
-### Task 003: Tests
+### Task 003: README.md
 
-| # | Тест | Что проверяет |
-|---|------|--------------|
-| 1 | `TestOpenCodeConfig_Basic` | output=3000 при defaults |
-| 2 | `TestOpenCodeConfig_WithMaxModelLen` | context=32768 → input=25768, output=3000 |
-| 3 | `TestOpenCodeConfig_ContextLimitFromVLLM` | context=65536 → input=58536, output=3000 |
-| 4 | `TestOpenCodeConfig_NoMaxModelLen` | context=8192 → input=1192, output=3000 |
-| 5 | `TestOpenCodeConfig_CustomInput` | Явный input=8000 → output=20768 |
-| 6 | `TestOpenCodeConfig_CustomBuffer` | buffer=2000 → input=3192, output=3000 |
-| 7 | `TestOpenCodeConfig_SmallContext` | context=5000, auto → guards срабатывают |
-| 8 | `TestOpenCodeConfig_SmallContextExplicit` | context=5000, explicit input=3000 → output guard срабатывает |
-| 9 | `TestOpenCodeConfig_ConfigValidation` | Валидация новых полей |
+| # | Сценарий | Ожидаемый результат |
+|---|----------|---------------------|
+| 1 | Таблица Environment Variables | 11 строк |
+| 2 | Примечание о приоритете | Присутствует после таблицы |
 
 ---
 
 ## Интеграционное тестирование
 
-### Группа A: Config → Formula → Output (Tasks 001 + 002 + 003)
+### Группа A: ENV override → Load() → Tests (Tasks 001 + 004)
 
 | # | Сценарий | Шаги | Ожидаемый результат |
 |---|----------|------|---------------------|
-| 1 | Full cycle: default config | 1. Запустить сервер с default config. 2. GET /admin/opencode-config. 3. Проверить JSON. | output=3000 для всех моделей, input вычислен правильно по формуле. |
-| 2 | Full cycle: custom config | 1. PUT /admin/config с custom buffer/input. 2. GET /admin/opencode-config. 3. Проверить JSON. | output вычислен по формуле `context - buffer - input`. |
-| 3 | Config persistence | 1. Изменить config через API. 2. Проверить, что YAML файл сохранён. 3. Перезагрузить. 4. Проверить, что значения восстановлены. | Новые поля сохраняются и восстанавливаются. |
-| 4 | Multiple models with different context | 1. Два бэкенда с разными max_model_len. 2. GET /admin/opencode-config. 3. Проверить каждую модель. | Каждая модель имеет корректные лимиты на свой context. |
+| 1 | Full cycle: все ENV | 1. Установить все 9 ENV. 2. Создать Store. 3. `Load()`. 4. Проверить все поля. | Все поля GlobalConfig переопределены ENV. |
+| 2 | Partial ENV | 1. Установить 3 ENV. 2. `Load()`. 3. Проверить. | 3 поля переопределены, остальные — YAML. |
+| 3 | Mixed valid/invalid | 1. Установить 2 валидных + 1 невалидный ENV. 2. `Load()`. | 2 поля переопределены, невалидный → YAML. |
+| 4 | No ENV at all | 1. Не устанавливать ENV. 2. `Load()` с кастомным YAML. | Все поля из YAML. |
 
 ---
 
@@ -61,14 +55,18 @@
 
 | # | Функциональность | Тест | Ожидаемый результат |
 |---|-----------------|------|---------------------|
-| 1 | /v1/models | `TestGetModels` | Работает без изменений |
-| 2 | /v1/chat/completions | `TestChatCompletions` | Работает без изменений |
-| 3 | Admin CRUD servers | `TestAdmin*` | Работает без изменений |
-| 4 | Admin config | `TestAdmin*Config*` | Работает, новые поля в JSON |
-| 5 | Admin status | `TestAdminStatus` | Работает без изменений |
-| 6 | Metrics | `TestMetricsEndpoint_*` | Работает без изменений |
-| 7 | Smoke test | `TestIntegration_NoRegression` | Все endpoint работают |
-| 8 | OpenCode base_url | `TestOpenCodeConfig_CustomBaseURL` | Работает без изменений |
+| 1 | DefaultConfig | `TestDefaultConfig` | Без изменений |
+| 2 | StoreLoadCreatesDefault | `TestStoreLoadCreatesDefault` | Без изменений |
+| 3 | StoreLoadExisting | `TestStoreLoadExisting` | Без изменений (YAML-парсинг работает) |
+| 4 | StoreSetInvalidStrategy | `TestStoreSetInvalidStrategy` | Без изменений |
+| 5 | StoreSetInvalidServer | `TestStoreSetInvalidServer` | Без изменений |
+| 6 | StoreSetValid | `TestStoreSetValid` | Без изменений |
+| 7 | StoreSetPersists | `TestStoreSetPersists` | Без изменений |
+| 8 | GetCopy | `TestStoreGetCopy` | Без изменений |
+| 9 | FallbackStrategyValid | `TestFallbackStrategyValid` | Без изменений |
+| 10 | OpenCode defaults | `TestOpenCodeContextDefaults` | Без изменений |
+| 11 | OpenCode override | `TestOpenCodeContextLoad_Override` | Без изменений |
+| 12 | OpenCode invalid | `TestOpenCodeContextSet_InvalidBuffer` | Без изменений |
 
 ---
 
@@ -76,13 +74,13 @@
 
 Все тесты автоматизированы через `go test`:
 
-- **Unit**: `go test ./config/...`
-- **Unit + Integration**: `go test ./server/...`
+- **Unit**: `go test ./config/... -v`
 - **Full**: `go test ./...`
 
+**Примечание**: Существующие ENV-переменные `CONFIG_PATH` и `PORT` читаются на уровне `cmd/llm-bridge/main.go` (вне пакета `config/`) и не затрагиваются этой фичей. Они остаются работоспособными без изменений.
+
 Покрытие новых веток кода:
-- Auto mode (input=0) — `TestOpenCodeConfig_Basic`
-- Explicit mode (input>0) — `TestOpenCodeConfig_CustomInput`
-- Custom buffer — `TestOpenCodeConfig_CustomBuffer`
-- Guard (small context) — `TestOpenCodeConfig_SmallContext`, `TestOpenCodeConfig_SmallContextExplicit`
-- Config validation — `TestOpenCodeConfig_ConfigValidation`
+- `envInt()` — пустой ENV, валидный ENV, невалидный ENV, отрицательный ENV — `TestEnvInt_Helper`
+- `envString()` — пустой ENV, установленный ENV — `TestEnvString_Helper`
+- ENV override в `Load()` — полный, частичный, невалидный — `TestStoreLoad_ENVOverride*`
+- Все 9 ENV одновременно — `TestStoreLoad_AllENVOverrides`

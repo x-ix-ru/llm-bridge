@@ -1,16 +1,16 @@
-# Task 002 — Рефактор handleOpenCodeConfig() на новую формулу
+# Task 002 — Обновить docs/configuration.md
 
 ## Описание
 
-Заменить хардкод-формулу расчёта лимитов в `handleOpenCodeConfig()` на новую формулу `output = context - buffer - input`, используя значения из конфигурации (`GlobalConfig.OpenCodeContextBuffer`, `GlobalConfig.OpenCodeContextInput`).
+Добавить секцию «Environment Variables / Переменные окружения» в документацию конфигурации. Описать все 9 ENV-переменных с типами, дефолтами и приоритетом переопределения.
+
+## Что решает
+
+- Документирует новый механизм конфигурации для разработчиков и операторов.
+- Делает `configuration.md` исчерпывающим источником по конфигурации.
 
 ## Покрытие требований
 
-- Удаление хардкода `defaultGenerationLimit = 3000` и `buffer = 4000` из логики расчёта.
-- Реализация формулы `context = buffer + input + output`.
-- Чтение buffer и input из конфигурации.
-- Guard-логика для малых context windows.
-
-## Файлы для изменения
-
-- `server/opencode.go` — переписать блок расчёта `inLimit` / `outLimit` в цикле по моделям.
+- Секция должна быть добавлена после «Configuration Loading» (или как отдельная секция с перенумерацией TOC).
+- Таблица всех 9 ENV-переменных: имя, тип, default, описание, маппинг на YAML поле.
+- Указан приоритет: ENV > YAML > Default.

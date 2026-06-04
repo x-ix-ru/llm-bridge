@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -48,6 +49,74 @@ type GlobalConfig struct {
 type Config struct {
 	Global  GlobalConfig   `yaml:"global"`
 	Servers []ServerConfig `yaml:"servers"`
+}
+
+func envInt(key string, defaultVal int) int {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultVal
+	}
+	val, err := strconv.Atoi(v)
+	if err != nil {
+		return defaultVal
+	}
+	return val
+}
+
+func envString(key string, defaultVal string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		return defaultVal
+	}
+	return v
+}
+
+func applyEnvOverrides(cfg *GlobalConfig) {
+	cfg.FallbackStrategy = FallbackStrategy(
+		envString("FALLBACK_STRATEGY", string(cfg.FallbackStrategy)),
+	)
+	if !cfg.FallbackStrategy.Valid() {
+		cfg.FallbackStrategy = FallbackError
+	}
+
+	cfg.DiscoveryIntervalSec = envInt("DISCOVERY_INTERVAL_SEC", cfg.DiscoveryIntervalSec)
+	if cfg.DiscoveryIntervalSec <= 0 {
+		cfg.DiscoveryIntervalSec = 15
+	}
+
+	cfg.RequestTimeoutSec = envInt("REQUEST_TIMEOUT_SEC", cfg.RequestTimeoutSec)
+	if cfg.RequestTimeoutSec <= 0 {
+		cfg.RequestTimeoutSec = 60
+	}
+
+	cfg.QueueTimeoutSec = envInt("QUEUE_TIMEOUT_SEC", cfg.QueueTimeoutSec)
+	if cfg.QueueTimeoutSec <= 0 {
+		cfg.QueueTimeoutSec = 30
+	}
+
+	cfg.DrainTimeoutSec = envInt("DRAIN_TIMEOUT_SEC", cfg.DrainTimeoutSec)
+	if cfg.DrainTimeoutSec <= 0 {
+		cfg.DrainTimeoutSec = 30
+	}
+
+	cfg.ShutdownTimeoutSec = envInt("SHUTDOWN_TIMEOUT_SEC", cfg.ShutdownTimeoutSec)
+	if cfg.ShutdownTimeoutSec <= 0 {
+		cfg.ShutdownTimeoutSec = 10
+	}
+
+	if v := os.Getenv("OPENCODE_BASE_URL"); v != "" {
+		cfg.OpenCodeBaseURL = v
+	}
+
+	cfg.OpenCodeContextBuffer = envInt("OPENCODE_CONTEXT_BUFFER", cfg.OpenCodeContextBuffer)
+	if cfg.OpenCodeContextBuffer <= 0 {
+		cfg.OpenCodeContextBuffer = 4000
+	}
+
+	cfg.OpenCodeContextInput = envInt("OPENCODE_CONTEXT_INPUT", cfg.OpenCodeContextInput)
+	if cfg.OpenCodeContextInput < 0 {
+		cfg.OpenCodeContextInput = 0
+	}
 }
 
 func DefaultConfig() Config {
@@ -118,6 +187,8 @@ func (s *Store) Load() error {
 	if cfg.Global.OpenCodeContextBuffer <= 0 {
 		cfg.Global.OpenCodeContextBuffer = 4000
 	}
+
+	applyEnvOverrides(&cfg.Global)
 
 	s.config = cfg
 	return nil
