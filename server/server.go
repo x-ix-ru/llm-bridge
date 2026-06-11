@@ -87,6 +87,7 @@ func (s *Server) setupRoutes() {
 	s.mux.Get("/opencode/config", s.handleOpenCodeConfig)
 	s.mux.Get("/admin/metrics", s.handleMetrics)
 	s.mux.Post("/opencode/config", s.handlePostOpenCodeConfig)
+	s.mux.Post("/opencode/setup", s.handleOpenCodeSetup)
 
 	// Admin UI static files (must be registered after API routes to avoid conflicts)
 	webFS := http.FS(web.Static)
@@ -583,10 +584,40 @@ func (s *Server) respondError(w http.ResponseWriter, status int, msg string) {
 	_, _ = w.Write(body)
 }
 
-// respondJSON writes a JSON response with the given status code.
-func (s *Server) respondJSON(w http.ResponseWriter, status int, data interface{}) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	body, _ := json.Marshal(data)
-	_, _ = w.Write(body)
+// handleOpenCodeSetup performs a specialized setup for OpenCode clients.
+// It takes a provider and a model, updates the enabled_providers and 
+// the default models in the configuration.
+func (s *Server) handleOpenCodeSetup(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Provider string `json:"provider"`
+		Model    string `json:"model"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		s.respondError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+
+	if req.Provider == "" || req.Model == "" {
+		s.respondError(w, http.StatusBadRequest, "provider and model are required")
+		return
+	}
+
+	cfg := s.cfg.Get()
+
+	// 1. Update enabled_providers
+	cfg.EnabledProviders = []string{req.Provider}
+
+	// 2. Update default models
+	cfg.Model = req.Model
+	cfg.SmallModel = req.Model
+
+	if err := s.cfg.Set(cfg); err != nil {
+		s.respondError(w, http.StatusInternalServerError, "failed to update config: "+err.Error())
+		return
+	}
+
+	s.respondJSON(w, http.StatusOK, map[string]string{
+		"status":  "success",
+		"message": fmt.Sprintf("OpenCode setup complete. Provider: %s, Model: %s", req.Provider, req.Model),
+	})
 }
