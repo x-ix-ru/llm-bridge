@@ -45,14 +45,15 @@ type prevCounters struct {
 // Collector periodically fetches /metrics from a set of servers
 // and caches the parsed results.
 type Collector struct {
-	mu       sync.RWMutex
-	data     map[string]*ServerMetrics
-	prev     map[string]*prevCounters
-	interval time.Duration
-	client   *http.Client
-	logger   *slog.Logger
-	stopCh   chan struct{}
-	wg       sync.WaitGroup
+	mu          sync.RWMutex
+	data        map[string]*ServerMetrics
+	prev        map[string]*prevCounters
+	currentURLs []string
+	interval    time.Duration
+	client      *http.Client
+	logger      *slog.Logger
+	stopCh      chan struct{}
+	wg          sync.WaitGroup
 }
 
 // New creates a new Collector. The interval controls how often
@@ -75,6 +76,7 @@ func New(interval time.Duration) *Collector {
 // returns. The collector runs until the context is cancelled.
 func (c *Collector) Start(ctx context.Context, urls []string) {
 	c.mu.Lock()
+	c.currentURLs = urls
 	for _, u := range urls {
 		if _, ok := c.data[u]; !ok {
 			c.data[u] = &ServerMetrics{}
@@ -93,7 +95,10 @@ func (c *Collector) Start(ctx context.Context, urls []string) {
 		for {
 			select {
 			case <-ticker.C:
-				c.fetchAll(ctx, urls)
+				c.mu.RLock()
+				current := c.currentURLs
+				c.mu.RUnlock()
+				c.fetchAll(ctx, current)
 			case <-ctx.Done():
 				return
 			case <-c.stopCh:
@@ -106,7 +111,8 @@ func (c *Collector) Start(ctx context.Context, urls []string) {
 // SetServers updates the set of server URLs to collect metrics from.
 func (c *Collector) SetServers(urls []string) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
+	oldURLs := c.currentURLs
+	c.currentURLs = urls
 
 	// Add new entries.
 	for _, u := range urls {
@@ -125,6 +131,25 @@ func (c *Collector) SetServers(urls []string) {
 		}
 		if !found {
 			delete(c.data, u)
+		}
+	}
+	c.mu.Unlock()
+
+	// Fetch new servers immediately so they appear on the dashboard faster.
+	// Run in a goroutine to avoid blocking the admin API call.
+	if len(urls) > len(oldURLs) {
+		newURLs := make([]string, 0, len(urls))
+		urlSet := make(map[string]bool, len(oldURLs))
+		for _, u := range oldURLs {
+			urlSet[u] = true
+		}
+		for _, u := range urls {
+			if !urlSet[u] {
+				newURLs = append(newURLs, u)
+			}
+		}
+		if len(newURLs) > 0 {
+			go c.fetchAll(context.Background(), newURLs)
 		}
 	}
 }

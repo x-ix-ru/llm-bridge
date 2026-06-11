@@ -12,11 +12,16 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"gopkg.in/yaml.v3"
+
+// ...
 
 	"llm-bridge/backend"
 	"llm-bridge/config"
@@ -41,6 +46,9 @@ type Server struct {
 
 	bridgeReqsSuccess atomic.Int64
 	bridgeReqsError   atomic.Int64
+
+	promptLogMu sync.Mutex
+	promptLog   *os.File
 }
 
 // New creates a new Server, sets up all routes, and synchronises
@@ -55,9 +63,27 @@ func New(cfg *config.Store, disc *discovery.Discovery, pool *backend.Pool, rtr *
 		logger:  *slog.Default(),
 		addr:    addr,
 	}
+	s.initPromptLog()
 	s.setupRoutes()
 	s.syncServers()
 	return s
+}
+
+func (s *Server) initPromptLog() {
+	cfg := s.cfg.Get()
+	if !cfg.Global.PromptLogEnabled {
+		return
+	}
+	if cfg.Global.PromptLogPath == "" {
+		cfg.Global.PromptLogPath = "prompts.log"
+	}
+	f, err := os.OpenFile(cfg.Global.PromptLogPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		s.logger.Error("failed to open prompt log file", "error", err)
+		return
+	}
+	s.promptLog = f
+	s.logger.Info("prompt logging enabled", "path", cfg.Global.PromptLogPath)
 }
 
 // Handler returns the HTTP handler for use with httptest or other servers.
@@ -85,9 +111,10 @@ func (s *Server) setupRoutes() {
 	s.mux.Put("/admin/config", s.handlePutConfig)
 	s.mux.Get("/admin/status", s.handleStatus)
 	s.mux.Get("/opencode/config", s.handleOpenCodeConfig)
-	s.mux.Get("/admin/metrics", s.handleMetrics)
+	s.mux.Get("/opencode/setup.sh", s.handleGetSetupScript)
 	s.mux.Post("/opencode/config", s.handlePostOpenCodeConfig)
 	s.mux.Post("/opencode/setup", s.handleOpenCodeSetup)
+	s.mux.Get("/admin/metrics", s.handleMetrics)
 
 	// Admin UI static files (must be registered after API routes to avoid conflicts)
 	webFS := http.FS(web.Static)
@@ -184,6 +211,8 @@ func (s *Server) handleOpenAIProxy(w http.ResponseWriter, r *http.Request, check
 		s.respondError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
+
+	s.logPrompt(req.Model, bodyBytes)
 
 	if req.Model == "" {
 		s.respondError(w, http.StatusBadRequest, "model field is required")
@@ -571,6 +600,13 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 // Helpers
 // ---------------------------------------------------------------------------
 
+// respondJSON writes a JSON response with the provided status code.
+func (s *Server) respondJSON(w http.ResponseWriter, status int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(data)
+}
+
 // respondError writes a JSON error response in OpenAI-compatible format.
 func (s *Server) respondError(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -584,10 +620,37 @@ func (s *Server) respondError(w http.ResponseWriter, status int, msg string) {
 	_, _ = w.Write(body)
 }
 
+// logPrompt writes the request body to the prompt log file if enabled.
+func (s *Server) logPrompt(model string, body []byte) {
+	if s.promptLog == nil {
+		return
+	}
+	s.promptLogMu.Lock()
+	defer s.promptLogMu.Unlock()
+	ts := time.Now().Format(time.RFC3339)
+	_, _ = s.promptLog.Write([]byte(fmt.Sprintf("[%s] Model: %s\n%s\n\n", ts, model, string(body))))
+}
+
+// handleGetSetupScript serves the setup shell script.
+func (s *Server) handleGetSetupScript(w http.ResponseWriter, r *http.Request) {
+	scriptPath := "opencode_setup.sh"
+	data, err := os.ReadFile(scriptPath)
+	if err != nil {
+		s.logger.Error("failed to read setup script", "error", err)
+		s.respondError(w, http.StatusInternalServerError, "setup script not found")
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
+}
+
 // handleOpenCodeSetup performs a specialized setup for OpenCode clients.
 // It takes a provider and a model, updates the enabled_providers and 
 // the default models in the configuration.
 func (s *Server) handleOpenCodeSetup(w http.ResponseWriter, r *http.Request) {
+// ... (rest of implementation)
 	var req struct {
 		Provider string `json:"provider"`
 		Model    string `json:"model"`

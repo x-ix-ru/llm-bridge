@@ -45,11 +45,16 @@ type GlobalConfig struct {
 	OpenCodeContextOutput int              `yaml:"opencode_context_output,omitempty"`
 	OpenCodeContextBuffer int              `yaml:"opencode_context_buffer,omitempty"`
 	OpenCodeContextInput  int              `yaml:"opencode_context_input,omitempty"`
+	PromptLogEnabled      bool             `yaml:"prompt_log_enabled,omitempty"`
+	PromptLogPath         string           `yaml:"prompt_log_path,omitempty"`
 }
 
 type Config struct {
-	Global  GlobalConfig   `yaml:"global"`
-	Servers []ServerConfig `yaml:"servers"`
+	Global             GlobalConfig   `yaml:"global"`
+	Servers            []ServerConfig `yaml:"servers"`
+	EnabledProviders   []string       `yaml:"enabled_providers,omitempty"`
+	Model              string         `yaml:"model,omitempty"`
+	SmallModel         string         `yaml:"small_model,omitempty"`
 }
 
 func envInt(key string, defaultVal int) int {
@@ -107,6 +112,13 @@ func applyEnvOverrides(cfg *GlobalConfig) {
 
 	if v := os.Getenv("OPENCODE_BASE_URL"); v != "" {
 		cfg.OpenCodeBaseURL = v
+	}
+
+	if v := os.Getenv("PROMPT_LOG_ENABLED"); v != "" {
+		cfg.PromptLogEnabled = v == "true" || v == "1" || v == "yes"
+	}
+	if v := os.Getenv("PROMPT_LOG_PATH"); v != "" {
+		cfg.PromptLogPath = v
 	}
 
 	cfg.OpenCodeContextOutput = envInt("OPENCODE_CONTEXT_OUTPUT", cfg.OpenCodeContextOutput)
